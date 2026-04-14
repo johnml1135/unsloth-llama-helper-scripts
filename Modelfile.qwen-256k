@@ -1,0 +1,17 @@
+# Qwen 2.5 32B with 256k context window
+FROM qwen2.5:32b
+
+# Set context window to 256k tokens (maximum)
+# Note: This requires more VRAM - monitor usage on RTX 3090
+PARAMETER num_ctx 262144
+
+# Load all layers to GPU
+PARAMETER num_gpu 999
+
+# Optimal generation parameters
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.05
+
+# System message
+SYSTEM You are Qwen 2.5, an AI assistant with 256k token context window capability.

@@ -167,11 +167,95 @@ _TEMPLATES: dict[str, ModelTemplate] = {
         ),
         stop=["<|im_start|>", "<|im_end|>"],
     ),
+    "qwen35": ModelTemplate(
+        template=(
+            "{{- $lastUserIdx := -1 -}}\n"
+            "{{- range $idx, $msg := .Messages -}}\n"
+            "{{- if eq $msg.Role \"user\" }}{{ $lastUserIdx = $idx }}{{ end -}}\n"
+            "{{- end }}\n"
+            "{{- if or .System .Tools }}<|im_start|>system\n"
+            "{{ if .System }}\n"
+            "{{ .System }}\n"
+            "{{- end }}\n"
+            "{{- if .Tools }}# Tools\n"
+            "You may call one or more functions to assist with the user query.\n"
+            "You are provided with function signatures within <tools></tools> XML tags:\n"
+            "<tools>\n"
+            "{{- range .Tools }}\n"
+            "{\"type\": \"function\", \"function\": {{ .Function }}}\n"
+            "{{- end }}\n"
+            "</tools>\n"
+            "For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n"
+            "<tool_call>\n"
+            "{\"name\": <function-name>, \"arguments\": <args-json-object>}\n"
+            "</tool_call>\n"
+            "{{- end -}}\n"
+            "<|im_end|>\n"
+            "{{ end }}\n"
+            "{{- range $i, $_ := .Messages }}\n"
+            "{{- $last := eq (len (slice $.Messages $i)) 1 -}}\n"
+            "{{- if eq .Role \"user\" }}<|im_start|>user\n"
+            "{{ .Content }}{{ if eq $i $lastUserIdx }} /no_think{{ end }}<|im_end|>\n"
+            "{{ else if eq .Role \"assistant\" }}<|im_start|>assistant\n"
+            "{{ if .Content }}{{ .Content }}\n"
+            "{{- else if .ToolCalls }}<tool_call>\n"
+            "{{ range .ToolCalls }}{\"name\": \"{{ .Function.Name }}\", \"arguments\": {{ .Function.Arguments }}}\n"
+            "{{ end }}</tool_call>\n"
+            "{{- end }}{{ if not $last }}<|im_end|>\n"
+            "{{ end }}\n"
+            "{{- else if eq .Role \"tool\" }}<|im_start|>user\n"
+            "<tool_response>\n"
+            "{{ .Content }}\n"
+            "</tool_response><|im_end|>\n"
+            "{{ end }}\n"
+            "{{- if and (ne .Role \"assistant\") $last }}<|im_start|>assistant\n"
+            "<think>\n\n</think>\n\n"
+            "{{ end }}\n"
+            "{{- end }}"
+        ),
+        stop=["<|im_start|>", "<|im_end|>"],
+    ),
+    "qwen35_legacy": ModelTemplate(
+        template=(
+            "{{ if .Messages }}\n"
+            "{{- if or .System .Tools }}<|im_start|>system\n"
+            "{{- if .Tools }}\n"
+            "# Tools\n\n"
+            "You have access to the following functions:\n\n<tools>\n"
+            "{{ .Tools }}\n"
+            "</tools>\n\n"
+            "If you choose to call a function, respond with a tool call using the model's native tool-call format."
+            "{{- if .System }}\n\n{{ .System }}{{- end }}"
+            "{{- else if .System }}{{ .System }}"
+            "{{- end }}<|im_end|>\n"
+            "{{- end }}\n"
+            "{{- range .Messages }}\n"
+            "<|im_start|>{{ .Role }}\n"
+            "{{ .Content }}<|im_end|>\n"
+            "{{- end }}\n"
+            "<|im_start|>assistant\n"
+            "<think>\n"
+            "{{ .Response }}"
+            "{{- else }}\n"
+            "<|im_start|>system\n"
+            "{{ .System }}<|im_end|>\n"
+            "<|im_start|>user\n"
+            "{{ .Prompt }}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+            "<think>\n"
+            "{{ .Response }}"
+            "{{- end }}"
+        ),
+        stop=["<|im_start|>", "<|im_end|>"],
+    ),
 }
 
 
-def supported_architectures() -> list[str]:
-    return sorted(_TEMPLATES.keys())
+def supported_architectures(*, include_internal: bool = False) -> list[str]:
+    names = sorted(_TEMPLATES.keys())
+    if include_internal:
+        return names
+    return [name for name in names if not name.endswith("_legacy")]
 
 
 def generate_modelfile(
@@ -184,8 +268,8 @@ def generate_modelfile(
     system_message: str | None = None,
 ) -> str:
     if architecture not in _TEMPLATES:
-        raise ValueError(
-            f"Unsupported architecture: {architecture}. Supported: {', '.join(supported_architectures())}"
+            raise ValueError(
+            f"Unsupported architecture: {architecture}. Supported: {', '.join(supported_architectures(include_internal=True))}"
         )
 
     mt = _TEMPLATES[architecture]

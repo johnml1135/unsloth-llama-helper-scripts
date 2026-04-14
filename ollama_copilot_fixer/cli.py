@@ -16,6 +16,7 @@ from .huggingface import hf_download_cached
 from .modelfile import generate_modelfile, supported_architectures
 from .ollama import create_model, list_models, run_model
 from .paths import find_llama_gguf_split
+from .probe import probe_template_candidates
 from .source import parse_model_source
 
 
@@ -76,6 +77,11 @@ def build_setup_parser() -> argparse.ArgumentParser:
         help="Path to llama.cpp folder or llama-gguf-split.exe (required to merge sharded GGUFs).",
     )
     p.add_argument("--keep-downloads", action="store_true", help="Keep temporary download/merge directory.")
+    p.add_argument(
+        "--probe-template",
+        action="store_true",
+        help="Probe candidate templates and select the first one that produces a clean response.",
+    )
     p.add_argument(
         "--skip-test",
         action="store_true",
@@ -226,15 +232,37 @@ def main(argv: list[str] | None = None) -> int:
             arch = detect_architecture(str(final_gguf))
         console.success(f"Architecture: {arch}")
 
-        console.info("Generating Modelfile...")
-        modelfile_path = temp_dir / "Modelfile"
-
         # Nemotron GGUFs frequently leak turn markers / non-standard tool markup.
         # We apply a small set of safe stop tokens and stronger system guidance.
         source_hint = (parsed.repo_id or "") + " " + final_gguf.name
         is_nemotron = "nemotron" in source_hint.lower()
         extra_stop: list[str] = []
         system_message = None
+
+        if args.probe_template:
+            console.info("Probing template candidates...")
+            selected_arch, probe_outcomes = probe_template_candidates(
+                model_name=model_name,
+                absolute_model_path=str(final_gguf.resolve()),
+                architecture=arch,
+                context_length=args.context_length,
+                temperature=args.temperature,
+                system_message=system_message,
+                temp_dir=temp_dir,
+            )
+            for outcome in probe_outcomes:
+                status = "selected" if outcome.accepted else "rejected"
+                preview = f" preview={outcome.content_preview!r}" if outcome.content_preview else ""
+                console.info(f"Probe {outcome.candidate.label}: {status} ({outcome.reason}){preview}")
+            if not any(outcome.accepted for outcome in probe_outcomes):
+                console.warn(
+                    "No probe candidate produced a clean response; falling back to the detected architecture profile."
+                )
+            arch = selected_arch
+            console.success(f"Using probed architecture/template: {arch}")
+
+        console.info("Generating Modelfile...")
+        modelfile_path = temp_dir / "Modelfile"
         if is_nemotron:
             # Note: Nemotron models in Ollama use a dedicated parser/renderer. We avoid
             # applying Llama-style stop tokens here because they can cause empty outputs.
@@ -274,6 +302,10 @@ def main(argv: list[str] | None = None) -> int:
                 console.warn(f"Smoke test failed: {e}")
 
         console.success("Setup complete. Your model should show Tool capability in VS Code Copilot.")
+        if arch == "qwen35":
+            console.info(
+                "Applied the Ollama-style Qwen thinking template with default no_think behavior."
+            )
 
         # Cleanup cached merged artifacts if configured.
         try:

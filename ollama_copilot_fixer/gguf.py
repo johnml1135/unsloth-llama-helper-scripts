@@ -110,6 +110,8 @@ def detect_architecture(file_path: str) -> str:
         return "phi3"
     if re.search(r"gemma.*2|gemma-2", content):
         return "gemma2"
+    if re.search(r"qwen35moe|qwen35|qwen3[\._-]?5", content):
+        return "qwen35"
     if re.search(r"qwen.*2|qwen-2", content):
         return "qwen"
 
@@ -124,6 +126,8 @@ def detect_architecture(file_path: str) -> str:
         return "phi3"
     if re.search(r"gemma", filename):
         return "gemma2"
+    if re.search(r"qwen3[\._-]?5|qwen35", filename):
+        return "qwen35"
     if re.search(r"qwen", filename):
         return "qwen"
 

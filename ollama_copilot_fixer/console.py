@@ -4,7 +4,17 @@ import sys
 
 
 def _print(prefix: str, message: str, stream) -> None:
-    stream.write(f"{prefix} {message}\n")
+    line = f"{prefix} {message}\n"
+    try:
+        stream.write(line)
+    except UnicodeEncodeError:
+        fallback_prefix = {
+            "ℹ": "[INFO]",
+            "✓": "[OK]",
+            "⚠": "[WARN]",
+            "✗": "[ERROR]",
+        }.get(prefix, "[LOG]")
+        stream.write(f"{fallback_prefix} {message}\n")
 
 
 def info(message: str) -> None:

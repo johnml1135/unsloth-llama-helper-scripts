@@ -125,6 +125,18 @@ python -m ollama_copilot_fixer \
 python -m ollama_copilot_fixer --model-source "hf.co/unsloth/<MODEL-REPO>:IQ2_XXS"
 ```
 
+#### 6. Probe candidate templates before creating the final model
+
+```bash
+python -m ollama_copilot_fixer \
+  --model-source "hf.co/unsloth/Qwen3.5-35B-A3B-GGUF:UD-IQ3_S" \
+  --model-name "qwen35-35b-a3b-128k" \
+  --context-length 131072 \
+  --probe-template
+```
+
+This creates temporary probe models, tests candidate templates, and picks the first one that returns a clean response.
+
 ---
 
 ## 📖 CLI Options
@@ -143,6 +155,7 @@ Common options:
 | `--quantization-type` | ❌ No | - | Quant filter for HF downloads |
 | `--llama-cpp-path` | ❌ No | - | Path to llama.cpp folder or `llama-gguf-split.exe` |
 | `--keep-downloads` | ❌ No | off | Keep temp working directory |
+| `--probe-template` | ❌ No | off | Probe candidate templates and select the first clean one |
 | `--skip-test` | ❌ No | off | Skip `ollama run` smoke test |
 
 Tip: if you want to explicitly request a large context window (subject to Ollama limits), pass it directly:
@@ -189,6 +202,7 @@ python -m ollama_copilot_fixer cache clear
 - ✅ **Phi-3 / Phi-4**
 - ✅ **Gemma 2**
 - ✅ **Qwen 2 / 2.5**
+- ✅ **Qwen 3.5** (including Unsloth GGUFs)
 
 ---
 
@@ -205,6 +219,21 @@ python -m ollama_copilot_fixer cache clear
 2. Auto-selects specified quantization or first GGUF found
 3. Handles sharded downloads automatically
 4. Proceeds with merge and configuration
+
+## ✅ Qwen3.5 on Ollama: What Actually Works
+
+For Unsloth Qwen3.5 GGUFs, the reliable path is to use an **Ollama-style Qwen thinking template** rather than a plain ChatML/Qwen2 template.
+
+This repo now applies that behavior automatically for `qwen35` models by:
+
+1. Detecting Qwen3.5 / Qwen3.5-MoE GGUFs
+2. Using an Ollama-style Qwen template for tool calling
+3. Defaulting the last user turn to `/no_think`
+4. Seeding an empty `<think></think>` block before the assistant response
+
+That combination matches the behavior Ollama's official `qwen3` models use when reasoning is disabled, and it prevents raw `<think>` output for the tested Unsloth Qwen3.5 35B-A3B model.
+
+If you want extra safety for unknown variants, enable `--probe-template` to test multiple candidate templates before the final model is created.
 
 ---
 
@@ -314,7 +343,11 @@ python -m pip install -U huggingface_hub
 This usually means the model is outputting tool calls as plain text, not as structured `tool_calls`.
 
 - For Nemotron models, prefer running them via NVIDIA NIM (see the section above).
-- For Ollama + GGUF imports, see “Future Improvements” below for the proxy approach.
+- For Qwen3.5 GGUF imports, use the built-in Ollama-style Qwen template path in this repo and optionally `--probe-template`.
+
+### Visible `<think>` blocks or reasoning text in API output
+
+For Unsloth Qwen3.5 GGUFs, this repo now uses the Ollama-style no-think path by default. If a specific variant still leaks visible reasoning, rerun setup with `--probe-template` so the repo can test candidate templates before creating the final model.
 
 ### Out of Disk Space
 
@@ -360,26 +393,26 @@ The `gguf-split` utility from llama.cpp:
 
 ---
 
-## 🔮 Future Improvements: ToolBridge / OpenAI↔Ollama Proxy
+## 🧩 What This Repo Can Fix vs. What It Cannot
 
-When using Ollama with certain GGUF imports, the model may not consistently produce structured tool calls even with a good Modelfile template. In those cases, a lightweight proxy can translate “tool call as text” into OpenAI-compatible `tool_calls` so GitHub Copilot can execute tools instead of displaying markup.
+### The scripts can fix
 
-### Why it would be needed
+- Downloading the right GGUF from Hugging Face
+- Ignoring helper GGUFs like `mmproj`, `imatrix`, `clip`, or other non-weight artifacts
+- Merging sharded GGUFs into a single file
+- Detecting architecture and generating an architecture-appropriate Modelfile
+- Setting context length and runtime defaults in Ollama
+- Selecting the correct Ollama-style Qwen no-think template for Qwen3.5 models
+- Probing multiple candidate templates before final model creation
 
-- Ollama can expose an OpenAI-like API, but tool calling still depends on the model emitting a parseable tool-call dialect.
-- Some models (including certain Nemotron GGUF builds) emit tool calls in a non-standard textual format.
+### The scripts cannot fully fix on their own
 
-### How it could be implemented
+- Broken or incompatible GGUF tensor data
+- Missing projector/vision components that the runtime truly requires
+- Upstream Ollama bugs in JSON formatting, token accounting, or model-specific runtime behavior
+- Model behaviors that require actual GGUF reconstruction, requantization, or upstream template fixes
 
-- Run a local proxy (for example, ToolBridge) that accepts OpenAI `/v1` requests from Copilot.
-- Proxy forwards prompts to Ollama, then:
-	- Detects tool-call text patterns in the assistant content.
-	- Converts them into structured `tool_calls` in the OpenAI response.
-	- Optionally strips special tokens / turn markers.
-- Update this repo to add:
-	- A probe step to detect whether a model emits structured tool calls.
-	- Optional commands to install/run the proxy as a background service (Windows Scheduled Task, Linux systemd).
-	- Minimal config to point Copilot at the proxy endpoint when needed.
+In short: this repo can solve many integration/runtime issues with scripts and Modelfiles. It cannot rewrite model weights or guarantee that a fundamentally broken GGUF becomes correct without upstream conversion or re-export.
 
 ---
 
