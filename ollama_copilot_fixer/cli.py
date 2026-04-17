@@ -165,6 +165,8 @@ def build_publish_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--private", action="store_true", help="Create the Hugging Face repo as private. Public is the default.")
     p.add_argument("--dry-run", action="store_true", help="Validate inputs and generate files without uploading anything.")
+    p.add_argument("--config", help="Path to config.json (default: OS config dir or $OLLAMA_COPILOT_FIXER_CONFIG)")
+    p.add_argument("--cache-root", help="Override cache root directory (staging uploads live under <cache>/publish/)")
     return p
 
 
@@ -205,6 +207,9 @@ def _run_publish(argv: list[str]) -> int:
     args = build_publish_parser().parse_args(argv)
 
     try:
+        config = load_config(config_path=args.config, cache_root_override=args.cache_root)
+        ensure_cache_dirs(config)
+
         gguf_path = Path(args.gguf_path).expanduser().resolve()
         if not gguf_path.exists():
             console.error(f"GGUF path not found: {gguf_path}")
@@ -271,6 +276,7 @@ def _run_publish(argv: list[str]) -> int:
                 release_card_path=release_card_path,
                 modelfile_path=modelfile_path,
                 readme_text=readme_text,
+                staging_root=config.cache_root,
                 token=args.token,
                 private=bool(args.private),
             )
