@@ -17,6 +17,14 @@ from .modelfile import generate_modelfile, supported_architectures
 from .ollama import create_model, list_models, run_model
 from .paths import find_llama_gguf_split
 from .probe import probe_template_candidates
+from .publish import (
+    build_hf_repo_id,
+    build_model_readme,
+    git_remote_origin_url,
+    parse_github_remote,
+    parse_release_card,
+    publish_release,
+)
 from .source import parse_model_source
 
 
@@ -110,6 +118,56 @@ def build_cache_parser() -> argparse.ArgumentParser:
     return p
 
 
+def build_publish_parser() -> argparse.ArgumentParser:
+    remote = parse_github_remote(git_remote_origin_url(Path(__file__).resolve().parents[1]))
+    default_namespace = os.environ.get("OLLAMA_COPILOT_FIXER_HF_NAMESPACE") or (remote[0] if remote else "")
+    default_source_repo_url = os.environ.get("OLLAMA_COPILOT_FIXER_SOURCE_REPO") or (remote[2] if remote else "")
+
+    p = argparse.ArgumentParser(
+        prog="ollama-copilot-fixer publish",
+        description="Publish a public Hugging Face model repo containing a GGUF, a Copilot-compatible Modelfile, and a model card.",
+    )
+    p.add_argument("--gguf-path", required=True, help="Path to the local GGUF to publish.")
+    p.add_argument(
+        "--release-card",
+        required=True,
+        help="Markdown release card stored in the repo releases/ folder.",
+    )
+    p.add_argument("--repo-id", help="Full Hugging Face repo id, e.g. your-name/model-name.")
+    p.add_argument(
+        "--namespace",
+        default=default_namespace,
+        help="Hugging Face namespace/user. Defaults to OLLAMA_COPILOT_FIXER_HF_NAMESPACE or the current GitHub remote owner.",
+    )
+    p.add_argument(
+        "--repo-name",
+        help="Model repo name. Defaults to the release card filename with a -github-copilot suffix.",
+    )
+    p.add_argument(
+        "--architecture",
+        default="auto",
+        choices=["auto", *supported_architectures()],
+        help="Architecture used to generate the published Modelfile.",
+    )
+    p.add_argument(
+        "--context-length",
+        type=int,
+        default=None,
+        help="Context window to bake into the published Modelfile.",
+    )
+    p.add_argument("--temperature", type=float, default=0.7, help="Temperature written into the published Modelfile.")
+    p.add_argument("--modelfile-path", help="Optional existing Modelfile to upload instead of generating one.")
+    p.add_argument("--token", help="Optional Hugging Face token. If omitted, use your local hf auth login session.")
+    p.add_argument(
+        "--source-repo-url",
+        default=default_source_repo_url,
+        help="GitHub repository URL to reference in the generated README.",
+    )
+    p.add_argument("--private", action="store_true", help="Create the Hugging Face repo as private. Public is the default.")
+    p.add_argument("--dry-run", action="store_true", help="Validate inputs and generate files without uploading anything.")
+    return p
+
+
 def _run_cache(argv: list[str]) -> int:
     args = build_cache_parser().parse_args(argv)
     config = load_config(config_path=args.config, cache_root_override=args.cache_root)
@@ -143,10 +201,97 @@ def _run_cache(argv: list[str]) -> int:
     return 2
 
 
+def _run_publish(argv: list[str]) -> int:
+    args = build_publish_parser().parse_args(argv)
+
+    try:
+        gguf_path = Path(args.gguf_path).expanduser().resolve()
+        if not gguf_path.exists():
+            console.error(f"GGUF path not found: {gguf_path}")
+            return 1
+        if gguf_path.suffix.lower() != ".gguf":
+            console.error(f"Expected a .gguf file: {gguf_path}")
+            return 1
+
+        release_card_path = Path(args.release_card).expanduser().resolve()
+        if not release_card_path.exists():
+            console.error(f"Release card not found: {release_card_path}")
+            return 1
+
+        card = parse_release_card(release_card_path)
+
+        if args.repo_id:
+            repo_id = args.repo_id.strip()
+        else:
+            repo_name = args.repo_name or f"{release_card_path.stem}-github-copilot"
+            repo_id = build_hf_repo_id(namespace=args.namespace, repo_name=repo_name)
+
+        architecture = args.architecture
+        if architecture == "auto":
+            console.info("Detecting architecture for published Modelfile...")
+            architecture = detect_architecture(str(gguf_path))
+        console.success(f"Architecture: {architecture}")
+
+        with tempfile.TemporaryDirectory(prefix="ollama_copilot_publish_") as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            if args.modelfile_path:
+                modelfile_path = Path(args.modelfile_path).expanduser().resolve()
+                if not modelfile_path.exists():
+                    console.error(f"Modelfile path not found: {modelfile_path}")
+                    return 1
+            else:
+                modelfile_path = temp_dir / "Modelfile"
+                modelfile_text = generate_modelfile(
+                    absolute_model_path=f"./{gguf_path.name}",
+                    architecture=architecture,
+                    context_length=args.context_length,
+                    temperature=args.temperature,
+                )
+                modelfile_path.write_text(modelfile_text, encoding="utf-8")
+
+            readme_text = build_model_readme(
+                card=card,
+                repo_id=repo_id,
+                gguf_filename=gguf_path.name,
+                modelfile_filename="Modelfile",
+                source_repo_url=args.source_repo_url or None,
+            )
+
+            console.info(f"Target Hugging Face repo: {repo_id}")
+            console.info("Publishing is public by default." if not args.private else "Publishing as a private repo.")
+
+            if args.dry_run:
+                console.success("Dry run complete. README and Modelfile generation succeeded.")
+                console.info(f"Validated release card: {release_card_path.name}")
+                return 0
+
+            repo_url = publish_release(
+                repo_id=repo_id,
+                gguf_path=gguf_path,
+                release_card_path=release_card_path,
+                modelfile_path=modelfile_path,
+                readme_text=readme_text,
+                token=args.token,
+                private=bool(args.private),
+            )
+
+        console.success(f"Published model repo: {repo_url}")
+        console.success("The release README explicitly states that the package is fixed to work with GitHub Copilot.")
+        return 0
+    except KeyboardInterrupt:
+        console.warn("Cancelled (Ctrl-C).")
+        return 130
+    except Exception as e:
+        console.error(str(e))
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     if argv and argv[0].lower() == "cache":
         return _run_cache(argv[1:])
+    if argv and argv[0].lower() == "publish":
+        return _run_publish(argv[1:])
 
     args = build_setup_parser().parse_args(argv)
 

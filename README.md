@@ -33,6 +33,7 @@ Downloading models from HuggingFace and configuring them manually is tedious and
 - 🧩 **Auto-merge sharded files** - Detects and combines split models
 - 🔍 **Auto-detect architecture** (Llama 3, Mistral, Phi-3, Gemma 2, Nemotron)
 - 🛠️ **Apply tool templates** automatically
+- 🚀 **Publish public Hugging Face repos locally** with the GGUF, Copilot-ready `Modelfile`, and model card
 - ✅ **Validate and test** models after setup
 - 🎨 **Color-coded output** for easy troubleshooting
 - 🧹 **Automatic cleanup** of temporary files
@@ -191,6 +192,53 @@ Cache commands:
 ```bash
 python -m ollama_copilot_fixer cache info
 python -m ollama_copilot_fixer cache clear
+```
+
+---
+
+## 📦 Publish a Copilot-fixed model to Hugging Face
+
+This repo also includes a **local publish command**. It creates a Hugging Face model repo, uploads:
+
+- the GGUF file
+- a Copilot-compatible `Modelfile`
+- a generated `README.md`
+- the original release card from this repo's `releases/` folder
+
+The generated model card explicitly says the package is **fixed to work with GitHub Copilot** while linking back to the original upstream model.
+
+### Release cards
+
+Store one markdown file per publish job in [`releases/`](releases/).
+
+- Start from [`releases/_template.md`](releases/_template.md)
+- Keep the card in the repo so the publish command can upload the same source card to Hugging Face
+- A ready-to-use example for the validated Qwen3.6 release lives at [`releases/qwen36-35b-a3b-ud-iq4xs-128k.md`](releases/qwen36-35b-a3b-ud-iq4xs-128k.md)
+
+### Publish command
+
+```bash
+python -m ollama_copilot_fixer publish \
+  --gguf-path "C:\path\to\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf" \
+  --release-card "releases\qwen36-35b-a3b-ud-iq4xs-128k.md" \
+  --context-length 131072
+```
+
+Notes:
+
+- The Hugging Face repo is **public by default**.
+- By default, `--namespace` is taken from `OLLAMA_COPILOT_FIXER_HF_NAMESPACE` or from the current GitHub remote owner.
+- If you already ran `hf auth login`, you usually do not need `--token`.
+- If you do not pass `--repo-name`, the command uses `<release-card-stem>-github-copilot`.
+- The publish command generates a `Modelfile` that points at `./<your-file>.gguf`, so the downloaded repo can be used locally with `ollama create ... -f Modelfile`.
+
+Dry-run example:
+
+```bash
+python -m ollama_copilot_fixer publish \
+  --gguf-path "C:\path\to\model.gguf" \
+  --release-card "releases\_template.md" \
+  --dry-run
 ```
 
 ---
