@@ -101,6 +101,7 @@ def detect_architecture(file_path: str) -> str:
         content = chunk.decode("ascii", errors="ignore").lower()
     except Exception:
         content = ""
+    filename = Path(file_path).name.lower()
 
     if re.search(r"llama.*3\.[0-9]|llama3|llama-3", content):
         return "llama3"
@@ -110,12 +111,13 @@ def detect_architecture(file_path: str) -> str:
         return "phi3"
     if re.search(r"gemma.*2|gemma-2", content):
         return "gemma2"
+    if re.search(r"qwen3[\._-]?6|qwen36", content) or re.search(r"qwen3[\._-]?6|qwen36", filename):
+        return "qwen36"
     if re.search(r"qwen35moe|qwen35|qwen3[\._-]?5", content):
         return "qwen35"
     if re.search(r"qwen.*2|qwen-2", content):
         return "qwen"
 
-    filename = Path(file_path).name.lower()
     if "nemotron" in filename:
         return "nemotron"
     if re.search(r"llama.*3", filename):
@@ -126,6 +128,8 @@ def detect_architecture(file_path: str) -> str:
         return "phi3"
     if re.search(r"gemma", filename):
         return "gemma2"
+    if re.search(r"qwen3[\._-]?6|qwen36", filename):
+        return "qwen36"
     if re.search(r"qwen3[\._-]?5|qwen35", filename):
         return "qwen35"
     if re.search(r"qwen", filename):

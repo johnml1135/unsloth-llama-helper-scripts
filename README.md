@@ -129,8 +129,8 @@ python -m ollama_copilot_fixer --model-source "hf.co/unsloth/<MODEL-REPO>:IQ2_XX
 
 ```bash
 python -m ollama_copilot_fixer \
-  --model-source "hf.co/unsloth/Qwen3.5-35B-A3B-GGUF:UD-IQ3_S" \
-  --model-name "qwen35-35b-a3b-128k" \
+  --model-source "hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS" \
+  --model-name "qwen36-35b-a3b-ud-iq4xs-128k" \
   --context-length 131072 \
   --probe-template
 ```
@@ -149,7 +149,7 @@ Common options:
 |---|---:|---:|---|
 | `--model-source` | ✅ Yes | - | Local path, HF repo id/URL, or `hf.co/<owner>/<repo>:<QUANT>` |
 | `--model-name` | ❌ No | Derived | Name to register in Ollama |
-| `--architecture` | ❌ No | `auto` | `nemotron`, `llama3`, `mistral`, `phi3`, `gemma2`, `qwen`, or `auto` |
+| `--architecture` | ❌ No | `auto` | `nemotron`, `llama3`, `mistral`, `phi3`, `gemma2`, `qwen`, `qwen35`, `qwen36`, or `auto` |
 | `--context-length` | ❌ No | (auto) | Context window (`num_ctx`). If omitted, this tool will not set `num_ctx` in the Modelfile and Ollama/model defaults apply (Ollama may cap the maximum, e.g. 256k). |
 | `--temperature` | ❌ No | `0.7` | Default sampling temperature |
 | `--quantization-type` | ❌ No | - | Quant filter for HF downloads |
@@ -203,6 +203,7 @@ python -m ollama_copilot_fixer cache clear
 - ✅ **Gemma 2**
 - ✅ **Qwen 2 / 2.5**
 - ✅ **Qwen 3.5** (including Unsloth GGUFs)
+- ✅ **Qwen 3.6** (including Unsloth GGUFs)
 
 ---
 
@@ -220,18 +221,28 @@ python -m ollama_copilot_fixer cache clear
 3. Handles sharded downloads automatically
 4. Proceeds with merge and configuration
 
-## ✅ Qwen3.5 on Ollama: What Actually Works
+## ✅ Qwen3.5 / Qwen3.6 on Ollama: What Actually Works
 
-For Unsloth Qwen3.5 GGUFs, the reliable path is to use an **Ollama-style Qwen thinking template** rather than a plain ChatML/Qwen2 template.
+For Unsloth Qwen3.5 and Qwen3.6 GGUFs, the reliable path is to use an **Ollama-style Qwen thinking template** rather than a plain ChatML/Qwen2 template.
 
-This repo now applies that behavior automatically for `qwen35` models by:
+This repo now applies that behavior automatically for `qwen35` and `qwen36` models by:
 
-1. Detecting Qwen3.5 / Qwen3.5-MoE GGUFs
+1. Detecting Qwen3.5 / Qwen3.6 GGUFs explicitly, even when the GGUF architecture still reports `qwen35moe`
 2. Using an Ollama-style Qwen template for tool calling
 3. Defaulting the last user turn to `/no_think`
 4. Seeding an empty `<think></think>` block before the assistant response
+5. Preserving `developer` messages for OpenAI-compatible clients such as Copilot
+6. Allowing `think=true` callers to switch back to `/think` and receive a separate `thinking` channel when the model decides to reason
 
-That combination matches the behavior Ollama's official `qwen3` models use when reasoning is disabled, and it prevents raw `<think>` output for the tested Unsloth Qwen3.5 35B-A3B model.
+That combination matches the behavior Ollama's official `qwen3` models use when reasoning is disabled, and it prevents raw `<think>` output for tested Unsloth Qwen3.5 and Qwen3.6 models.
+
+Validated in this repo:
+
+- `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS`
+- model name: `qwen36-35b-a3b-ud-iq4xs-128k`
+- context length: `131072`
+- direct Ollama chat output is clean by default
+- `think=true` can produce a separate `message.thinking` stream on harder prompts
 
 If you want extra safety for unknown variants, enable `--probe-template` to test multiple candidate templates before the final model is created.
 
@@ -343,11 +354,13 @@ python -m pip install -U huggingface_hub
 This usually means the model is outputting tool calls as plain text, not as structured `tool_calls`.
 
 - For Nemotron models, prefer running them via NVIDIA NIM (see the section above).
-- For Qwen3.5 GGUF imports, use the built-in Ollama-style Qwen template path in this repo and optionally `--probe-template`.
+- For Qwen3.5 / Qwen3.6 GGUF imports, use the built-in Ollama-style Qwen template path in this repo and optionally `--probe-template`.
 
 ### Visible `<think>` blocks or reasoning text in API output
 
-For Unsloth Qwen3.5 GGUFs, this repo now uses the Ollama-style no-think path by default. If a specific variant still leaks visible reasoning, rerun setup with `--probe-template` so the repo can test candidate templates before creating the final model.
+For Unsloth Qwen3.5 / Qwen3.6 GGUFs, this repo now uses the Ollama-style no-think path by default. If a specific variant still leaks visible reasoning, rerun setup with `--probe-template` so the repo can test candidate templates before creating the final model.
+
+If you want a visible reasoning stream instead, call Ollama with `think=true`. For the tested Qwen3.6 model, harder prompts can return reasoning in `message.thinking` / streaming `thinking` chunks while keeping the final answer in `message.content`.
 
 ### Out of Disk Space
 

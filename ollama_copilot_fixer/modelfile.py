@@ -215,6 +215,82 @@ _TEMPLATES: dict[str, ModelTemplate] = {
         ),
         stop=["<|im_start|>", "<|im_end|>"],
     ),
+    # Qwen3.6 template.
+    #
+    # Behaviour matrix for the final assistant head and user-message suffix:
+    #
+    #   Tools present | IsThinkSet | Think | user suffix | assistant head seed
+    #   ------------- | ---------- | ----- | ----------- | -------------------
+    #   no            | no         | -     | /no_think   | <think>\n\n</think>\n\n
+    #   no            | yes        | true  | /think      | <think>\n
+    #   no            | yes        | false | /no_think   | <think>\n\n</think>\n\n
+    #   yes           | no         | -     | (none)      | (none) -- let model emit <tool_call>
+    #   yes           | yes        | true  | /think      | <think>\n
+    #   yes           | yes        | false | /no_think   | <think>\n\n</think>\n\n
+    #
+    # The "tools present, no explicit think" path is critical for GitHub Copilot:
+    # seeding </think> there makes the model treat the turn as "final answer"
+    # and emit plain narration instead of <tool_call> blocks.
+    "qwen36": ModelTemplate(
+        template=(
+            "{{- $lastUserIdx := -1 -}}\n"
+            "{{- range $idx, $msg := .Messages -}}\n"
+            "{{- if eq $msg.Role \"user\" }}{{ $lastUserIdx = $idx }}{{ end -}}\n"
+            "{{- end }}\n"
+            "{{- if or .System .Tools }}<|im_start|>system\n"
+            "{{ if .System }}\n"
+            "{{ .System }}\n"
+            "{{- end }}\n"
+            "{{- if .Tools }}# Tools\n"
+            "You may call one or more functions to assist with the user query.\n"
+            "You are provided with function signatures within <tools></tools> XML tags:\n"
+            "<tools>\n"
+            "{{- range .Tools }}\n"
+            "{\"type\": \"function\", \"function\": {{ .Function }}}\n"
+            "{{- end }}\n"
+            "</tools>\n"
+            "For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n"
+            "<tool_call>\n"
+            "{\"name\": <function-name>, \"arguments\": <args-json-object>}\n"
+            "</tool_call>\n"
+            "{{- end -}}\n"
+            "<|im_end|>\n"
+            "{{ end }}\n"
+            "{{- range $i, $_ := .Messages }}\n"
+            "{{- $last := eq (len (slice $.Messages $i)) 1 -}}\n"
+            "{{- if or (eq .Role \"system\") (eq .Role \"developer\") }}<|im_start|>{{ .Role }}\n"
+            "{{ .Content }}<|im_end|>\n"
+            "{{ else if eq .Role \"user\" }}<|im_start|>user\n"
+            "{{ .Content }}"
+            "{{- if eq $i $lastUserIdx }}"
+            "{{- if $.IsThinkSet -}}"
+            "{{- if $.Think -}} /think{{- else -}} /no_think{{- end -}}"
+            "{{- else if not $.Tools -}} /no_think{{- end -}}"
+            "{{- end }}<|im_end|>\n"
+            "{{ else if eq .Role \"assistant\" }}<|im_start|>assistant\n"
+            "{{- if and .Thinking (or $last (gt $i $lastUserIdx)) -}}"
+            "<think>{{ .Thinking }}</think>\n"
+            "{{- end }}"
+            "{{ if .Content }}{{ .Content }}\n"
+            "{{- else if .ToolCalls }}<tool_call>\n"
+            "{{ range .ToolCalls }}{\"name\": \"{{ .Function.Name }}\", \"arguments\": {{ .Function.Arguments }}}\n"
+            "{{ end }}</tool_call>\n"
+            "{{- end }}{{ if not $last }}<|im_end|>\n"
+            "{{ end }}\n"
+            "{{- else if eq .Role \"tool\" }}<|im_start|>user\n"
+            "<tool_response>\n"
+            "{{ .Content }}\n"
+            "</tool_response><|im_end|>\n"
+            "{{ end }}\n"
+            "{{- if and (ne .Role \"assistant\") $last }}<|im_start|>assistant\n"
+            "{{- if $.IsThinkSet -}}"
+            "{{- if $.Think -}}<think>\n{{- else -}}<think>\n\n</think>\n\n{{- end -}}"
+            "{{- else if not $.Tools -}}<think>\n\n</think>\n\n{{- end }}\n"
+            "{{ end }}\n"
+            "{{- end }}"
+        ),
+        stop=["<|im_start|>", "<|im_end|>"],
+    ),
     "qwen35_legacy": ModelTemplate(
         template=(
             "{{ if .Messages }}\n"

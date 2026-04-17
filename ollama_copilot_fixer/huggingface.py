@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from typing import MutableMapping
 
 from .config import AppConfig
 
@@ -36,12 +37,30 @@ def hf_download(repo_id: str, dest_dir: str, quantization_type: str | None) -> s
     )
 
 
+def _module_available(name: str) -> bool:
+    try:
+        __import__(name)
+    except ImportError:
+        return False
+    return True
+
+
+def _enable_fast_hf_transfers(environ: MutableMapping[str, str] | None = None) -> None:
+    env = os.environ if environ is None else environ
+    if "HF_XET_HIGH_PERFORMANCE" not in env and _module_available("hf_xet"):
+        env["HF_XET_HIGH_PERFORMANCE"] = "1"
+    if "HF_HUB_ENABLE_HF_TRANSFER" not in env and _module_available("hf_transfer"):
+        env["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+
 def hf_download_cached(repo_id: str, config: AppConfig, quantization_type: str | None) -> str:
     """Download or reuse a GGUF from Hugging Face into the app-managed cache.
 
     Prefer the python library (huggingface_hub) to avoid local-dir copies.
     Falls back to the 'hf' CLI if the library is not importable.
     """
+    _enable_fast_hf_transfers()
+
     # 1) Prefer huggingface_hub if available.
     try:
         from huggingface_hub import HfApi, hf_hub_download  # type: ignore

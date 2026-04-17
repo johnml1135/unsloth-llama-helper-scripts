@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "python -m pytest": true,
+        "python -m ollama_copilot_fixer": true,
+        "ollama": true
+    },
+    "github.copilot.chat.agentDebugLog.fileLogging.enabled": true
+}

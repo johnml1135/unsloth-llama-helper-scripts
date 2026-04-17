@@ -39,6 +39,13 @@ def candidates_for_architecture(architecture: str) -> list[ProbeCandidate]:
             ProbeCandidate("qwen35_legacy", "legacy-qwen35"),
             ProbeCandidate("qwen", "generic-qwen"),
         ]
+    if architecture == "qwen36":
+        return [
+            ProbeCandidate("qwen36", "ollama-qwen36"),
+            ProbeCandidate("qwen35", "ollama-qwen35"),
+            ProbeCandidate("qwen35_legacy", "legacy-qwen35"),
+            ProbeCandidate("qwen", "generic-qwen"),
+        ]
     return [ProbeCandidate(architecture, architecture)]
 
 

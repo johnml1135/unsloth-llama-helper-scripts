@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
                 console.warn(f"Smoke test failed: {e}")
 
         console.success("Setup complete. Your model should show Tool capability in VS Code Copilot.")
-        if arch == "qwen35":
+        if arch in {"qwen35", "qwen36"}:
             console.info(
                 "Applied the Ollama-style Qwen thinking template with default no_think behavior."
             )

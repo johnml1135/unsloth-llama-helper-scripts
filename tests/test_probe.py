@@ -9,6 +9,12 @@ def test_candidates_for_qwen35_prefers_official_profile_first() -> None:
     assert [c.architecture for c in candidates] == ["qwen35", "qwen35_legacy", "qwen"]
 
 
+def test_candidates_for_qwen36_prefers_qwen36_profile_first() -> None:
+    candidates = candidates_for_architecture("qwen36")
+
+    assert [c.architecture for c in candidates] == ["qwen36", "qwen35", "qwen35_legacy", "qwen"]
+
+
 def test_evaluate_probe_payload_accepts_clean_content() -> None:
     accepted, reason, preview = evaluate_probe_payload(
         {"message": {"role": "assistant", "content": "Hello!"}}
