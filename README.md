@@ -4,6 +4,8 @@ A small Python CLI for one narrow job: make a short list of strong local coding 
 
 The main focus is Unsloth GGUF releases that already run in Ollama but still need the right template, Modelfile, and runtime defaults to behave correctly in Copilot, especially for tool calling.
 
+See the huggingface repo that hs the most recent coding models for 24GB hardware: https://huggingface.co/johnml1135/models 
+
 ## Current Focus
 
 - Qwen3.5 and Qwen3.6 Unsloth GGUFs in Ollama
