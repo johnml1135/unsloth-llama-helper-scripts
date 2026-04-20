@@ -78,7 +78,16 @@ def build_setup_parser() -> argparse.ArgumentParser:
             "and let Ollama/model defaults apply (Ollama may cap this, e.g. to 256k)."
         ),
     )
-    p.add_argument("--temperature", type=float, default=0.7)
+    p.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help=(
+            "Sampler temperature written into the Modelfile. If omitted, the architecture's "
+            "recommended default is used (e.g. 0.6 for Qwen3.5/Qwen3.6 thinking-mode coding, "
+            "per Unsloth guidance)."
+        ),
+    )
     p.add_argument("--quantization-type", help="Quant filter for Hugging Face downloads, e.g. Q4_0, Q4_K_M, IQ2_XXS")
     p.add_argument(
         "--llama-cpp-path",
@@ -155,7 +164,15 @@ def build_publish_parser() -> argparse.ArgumentParser:
         default=None,
         help="Context window to bake into the published Modelfile.",
     )
-    p.add_argument("--temperature", type=float, default=0.7, help="Temperature written into the published Modelfile.")
+    p.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help=(
+            "Temperature written into the published Modelfile. If omitted, the architecture's "
+            "recommended default is used (e.g. 0.6 for Qwen3.5/Qwen3.6)."
+        ),
+    )
     p.add_argument("--modelfile-path", help="Optional existing Modelfile to upload instead of generating one.")
     p.add_argument("--token", help="Optional Hugging Face token. If omitted, use your local hf auth login session.")
     p.add_argument(

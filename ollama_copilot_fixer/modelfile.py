@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -9,6 +9,16 @@ class ModelTemplate:
     stop: list[str]
     renderer: str | None = None
     parser: str | None = None
+    # Default sampler temperature when the caller doesn't supply one. This lets
+    # each architecture follow its upstream "best for coding" recommendation
+    # (e.g. Unsloth recommends temperature=0.6 for Qwen3.6 thinking-mode coding).
+    default_temperature: float = 0.7
+    # Extra Ollama PARAMETER lines emitted in the generated Modelfile. Keys are
+    # raw Ollama parameter names (top_p, top_k, min_p, repeat_penalty, ...).
+    # Values are emitted verbatim. These are the upstream-recommended sampler
+    # defaults for the architecture and can be overridden via Ollama's
+    # /set parameter API at runtime.
+    recommended_params: dict[str, float | int | str] = field(default_factory=dict)
 
 
 _SYSTEM_MESSAGE = (
@@ -214,6 +224,16 @@ _TEMPLATES: dict[str, ModelTemplate] = {
             "{{- end }}"
         ),
         stop=["<|im_start|>", "<|im_end|>"],
+        # Unsloth-recommended Qwen3 thinking-mode "precise coding" sampler:
+        # https://unsloth.ai/docs/models/qwen3.6 (same family guidance applies
+        # to Qwen3.5 thinking-mode coding workloads such as GitHub Copilot).
+        default_temperature=0.6,
+        recommended_params={
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "repeat_penalty": 1.0,
+        },
     ),
     # Qwen3.6 template.
     #
@@ -290,6 +310,19 @@ _TEMPLATES: dict[str, ModelTemplate] = {
             "{{- end }}"
         ),
         stop=["<|im_start|>", "<|im_end|>"],
+        # Unsloth-recommended Qwen3.6 thinking-mode "precise coding" sampler.
+        # Source: https://unsloth.ai/docs/models/qwen3.6 (Recommended Settings
+        # -> Thinking mode -> Precise coding tasks). Copilot's agentic coding
+        # workflow with tool calling matches this profile most closely; the
+        # qwen36 template lets the model think when tools are present so this
+        # sampler is the safest default.
+        default_temperature=0.6,
+        recommended_params={
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "repeat_penalty": 1.0,
+        },
     ),
     "qwen35_legacy": ModelTemplate(
         template=(
@@ -339,7 +372,7 @@ def generate_modelfile(
     absolute_model_path: str,
     architecture: str,
     context_length: int | None,
-    temperature: float,
+    temperature: float | None,
     extra_stop: list[str] | None = None,
     system_message: str | None = None,
 ) -> str:
@@ -354,6 +387,8 @@ def generate_modelfile(
         for s in extra_stop:
             if s not in stop:
                 stop.append(s)
+
+    effective_temperature = mt.default_temperature if temperature is None else temperature
 
     # Ollama Modelfile syntax
     out = [
@@ -384,7 +419,11 @@ def generate_modelfile(
     out += [
         "",
         "# Model parameters",
-        f"PARAMETER temperature {temperature}",
+        f"PARAMETER temperature {effective_temperature}",
+    ]
+    for key, value in mt.recommended_params.items():
+        out.append(f"PARAMETER {key} {value}")
+    out += [
         "PARAMETER num_predict -1",
         "",
     ]

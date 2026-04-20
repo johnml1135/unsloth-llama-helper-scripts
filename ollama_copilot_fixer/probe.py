@@ -81,7 +81,7 @@ def probe_template_candidates(
     absolute_model_path: str,
     architecture: str,
     context_length: int | None,
-    temperature: float,
+    temperature: float | None,
     system_message: str | None,
     temp_dir: Path,
 ) -> tuple[str, list[ProbeOutcome]]:
