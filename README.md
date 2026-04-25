@@ -1,120 +1,158 @@
-# Ollama Copilot Fixer
+# Unsloth Llama Helper Scripts
 
-A small Python CLI for one narrow job: make a short list of strong local coding models work cleanly with GitHub Copilot on 24 GB-class consumer hardware.
+PowerShell helpers for running [Unsloth](https://unsloth.ai/) GGUF models on a
+single 24 GB NVIDIA GPU via [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
+`llama-server`, exposed as an OpenAI-compatible endpoint for **VS Code GitHub
+Copilot Chat (BYOK)**, Cline, OpenCode, Claude Code Router, etc.
 
-The main focus is Unsloth GGUF releases that already run in Ollama but still need the right template, Modelfile, and runtime defaults to behave correctly in Copilot, especially for tool calling.
+No GGUF rebuilding. No Modelfiles. No Ollama. We just call llama-server with the
+parameters Unsloth itself recommends.
 
-See the huggingface repo that hs the most recent coding models for 24GB hardware: https://huggingface.co/johnml1135/models 
+## Why not Ollama?
 
-## Current Focus
+Ollama's bundled runner does not register the `qwen35moe` architecture used by
+Qwen3.6-35B-A3B
+([ollama/ollama#15747](https://github.com/ollama/ollama/issues/15747)) and
+Unsloth's own docs state
+[*"Currently no Qwen3.6 GGUF works in Ollama due to separate mmproj vision
+files. Use llama.cpp compatible backends."*](https://unsloth.ai/docs/models/qwen3.6)
 
-- Qwen3.5 and Qwen3.6 Unsloth GGUFs in Ollama
-- Nemotron 3 Nano 30B A3B class local setups
-- clean Copilot tool calling
-- practical local runs on 24 GB-class machines
+VS Code Copilot Chat ships first-class support for any OpenAI-compatible
+endpoint via the `github.copilot.chat.customOAIModels` setting
+([VS Code docs](https://code.visualstudio.com/docs/copilot/customization/language-models),
+shipped per [vscode-copilot-release#7518](https://github.com/microsoft/vscode-copilot-release/issues/7518)
+and agent-mode support per
+[#7832](https://github.com/microsoft/vscode-copilot-release/issues/7832)),
+so llama-server is the path of least resistance.
 
-This repo is not trying to support every GGUF on Hugging Face. It is intentionally focused on a few local coding models that are worth getting right.
+> Caveat: BYOK powers **chat + agent** only. Inline ghost-text completions stay
+> on GitHub-hosted models regardless of which inference backend you pick.
 
-## What The CLI Does
+## Quick start
 
-- download a GGUF from Hugging Face or use a local GGUF
-- merge sharded GGUFs when needed
-- generate a Copilot-safe Ollama Modelfile
-- create the model in Ollama
-- publish the fixed package back to Hugging Face
+```powershell
+# 1. (first run only) download a prebuilt llama.cpp into tools\llama.cpp\
+.\scripts\install-llama.ps1            # CUDA build by default
 
-## Most Tested Path
+# 2. pick a model from the menu and start the server in the background
+.\scripts\start-server.ps1             # auto-installs llama.cpp if missing
 
-The most validated setup in this repo is:
+# 3. check it
+.\scripts\status-server.ps1
 
-- `unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS`
-- context length `131072`
-- published example: `johnml1135/qwen36-35b-a3b-ud-iq4xs-128k-github-copilot`
-
-For Qwen3.5 and Qwen3.6, the key fix is using an Ollama-style Qwen template and safe no-think defaults so Copilot sees clean responses and structured tool calls instead of raw `<think>` output.
-
-## Requirements
-
-- Python 3.10+
-- [Ollama](https://ollama.ai/download) installed and running
-- `python -m pip install -r requirements.txt`
-- `hf auth login` if you need Hugging Face downloads or publishing
-- `llama.cpp` only if you need to merge sharded GGUFs
-
-## Quick Start
-
-Install dependencies:
-
-```bash
-python -m pip install -r requirements.txt
+# 4. stop it
+.\scripts\stop-server.ps1
 ```
 
-If you need Hugging Face access:
+The server listens on `http://127.0.0.1:8080/v1` (OpenAI-compatible).
+First launch downloads the GGUF weights to `models\` (controlled via
+`$env:LLAMA_CACHE`).
 
-```bash
-hf auth login
+## Wire VS Code Copilot Chat to it
+
+`start-server.ps1` prints the exact JSON snippet on launch. Add it to your VS
+Code `settings.json`:
+
+```jsonc
+"github.copilot.chat.customOAIModels": [
+  {
+    "name":    "qwen3.6-35b-a3b (local)",
+    "url":     "http://127.0.0.1:8080/v1",
+    "apiKey":  "sk-no-key-required",
+    "modelId": "qwen3.6-35b-a3b"
+  }
+]
 ```
 
-Create the validated Qwen3.6 model locally:
+> The custom-OpenAI-models UI is in VS Code Insiders 1.104+; in Stable you must
+> edit `settings.json` directly.
 
-```bash
-python -m ollama_copilot_fixer \
-	--model-source "hf.co/unsloth/Qwen3.6-35B-A3B-GGUF:UD-IQ4_XS" \
-	--model-name "qwen36-35b-a3b-ud-iq4xs-128k" \
-	--context-length 131072 \
-	--probe-template
+## Curated model catalog (24 GB profiles)
+
+Defined in [scripts/models.ps1](scripts/models.ps1). Quants and contexts are
+picked per model so that each fits a single 24 GB GPU with `q8_0` KV. Three of
+the four profiles run at 200K context; see **Measured GPU RAM** below for
+actual card usage.
+
+| Key               | Model                       | Quant         | Size     | Context (24 GB) | Native max | Notes                                                                                              |
+| ----------------- | --------------------------- | ------------- | -------- | --------------- | ---------- | -------------------------------------------------------------------------------------------------- |
+| `qwen36-35b-a3b`  | Qwen3.6 35B-A3B (MoE)       | `UD-Q4_K_S`   | ~19.5 GB | **200 000**     | 262 144    | Recommended. MoE → tiny KV. Tight fit — drop to `UD-IQ4_XS` (16.5 GB) for ~3 GiB headroom.        |
+| `qwen36-27b`      | Qwen3.6 27B (hybrid)        | `IQ4_XS`      | ~14.4 GB | **200 000**     | 262 144    | 16 of 64 layers full-attn (GQA 24:4), 48 Gated DeltaNet — KV barely grows with ctx.                |
+| `gemma4-26b-a4b`  | Gemma 4 26B-A4B (MoE)       | `UD-Q5_K_S`   | ~17.5 GB | **200 000**     | 262 144    | Comfortable fit; multimodal weights downloaded but unused.                                         |
+| `gemma4-31b`      | Gemma 4 31B (dense)         | `IQ4_XS`      | ~15.3 GB | **131 072**     | 262 144    | 60 layers, 10 full-attn + 50 sliding-window-1024. No headroom to push past 128K.                   |
+
+### Why these contexts?
+
+KV-cache memory ≈ `full_attn_layers × kv_heads × head_dim × 2 (k+v) ×
+bytes_per_elem × ctx_tokens`.
+
+- **Qwen3.6 MoE 35B-A3B** has `kv_heads=2`, so 200K @ q8_0 KV is ~8 GB —
+  tight but feasible alongside ~19 GB of weights with `-fa on`.
+- **Qwen3.6-27B** is *not* a classic dense model. Only **16 of its 64
+  layers** use full attention (GQA 24:4, head_dim 256); the other 48 are
+  Gated DeltaNet linear-attention with constant-size state. KV at 200K is
+  ~7 GB, leaving room for `IQ4_XS` weights (14.4 GB) on 24 GB.
+- **Gemma 4 31B** is dense but uses a 1-in-6 full-attention pattern (10
+  global + 50 sliding-window-1024, GQA 32:4 on global layers, head_dim
+  512). KV at 128K is ~6 GB. With `IQ4_XS` (15.3 GB) it fits, but there
+  is no headroom to push past 128K.
+- Per Unsloth, `q4_0` KV breaks Qwen3.x tool calls, so we keep KV at
+  `q8_0` and shrink the quant or context as needed.
+
+If you want a different ctx, pass `-ContextOverride 65536` to `start-server.ps1`
+or edit [scripts/models.ps1](scripts/models.ps1).
+
+## Sampler defaults
+
+From [Unsloth's Qwen3.6 docs](https://unsloth.ai/docs/models/qwen3.6) and
+[Gemma 4 docs](https://unsloth.ai/docs/models/gemma-4):
+
+| Family | temp | top_p | top_k | min_p | presence_penalty | repeat_penalty |
+| ------ | ---- | ----- | ----- | ----- | ---------------- | -------------- |
+| Qwen3.6 (precise coding, thinking) | 0.6 | 0.95 | 20 | 0.0 | 0.0 | 1.0 |
+| Gemma 4 (Google defaults)          | 1.0 | 0.95 | 64 | 0.0 | 0.0 | 1.0 |
+
+Disable thinking with `-NoThink` (passes
+`--chat-template-kwargs "{\"enable_thinking\":false}"`).
+
+## Scripts
+
+| Script                          | Purpose                                                              |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `scripts\install-llama.ps1`     | Download official llama.cpp Windows release (CUDA/Vulkan/CPU).       |
+| `scripts\start-server.ps1`      | Interactive menu, auto-installs llama.cpp, launches `llama-server`.  |
+| `scripts\status-server.ps1`     | PID, model, /health probe, `nvidia-smi` snapshot.                    |
+| `scripts\stop-server.ps1`       | Stop the background server.                                          |
+| `scripts\models.ps1`            | Model catalog & sampler defaults (edit to add or tune profiles).     |
+| `scripts\benchmark-models.ps1`  | Loads each catalog model, measures VRAM, runs a one-shot inference.  |
+
+## Measured GPU RAM
+
+Measured on **NVIDIA RTX 3090 (24 GiB)** running Windows, with
+`--flash-attn on --cache-type-k q8_0 --cache-type-v q8_0 --n-gpu-layers 99`.
+Numbers are total card usage from `nvidia-smi --query-gpu=memory.used` after
+the model is loaded **and** a one-shot chat-completion has been served.
+Baseline (no llama-server) is ~0.5 GiB.
+
+| Key               | Quant        | Context     | GPU RAM        | Free     |
+| ----------------- | ------------ | ----------- | -------------- | -------- |
+| `qwen36-35b-a3b`  | `UD-Q4_K_S`  | 200 000     | GPU RAM = 23.6 GB | 0.5 GiB |
+| `qwen36-27b`      | `IQ4_XS`     | 200 000     | GPU RAM = 23.0 GB | 1.0 GiB |
+| `gemma4-26b-a4b`  | `UD-Q5_K_S`  | 200 000     | GPU RAM = 22.4 GB | 1.6 GiB |
+| `gemma4-31b`      | `IQ4_XS`     | 131 072     | GPU RAM = 23.0 GB | 1.5 GiB |
+
+Reproduce with:
+
+```powershell
+.\scripts\benchmark-models.ps1            # all four
+.\scripts\benchmark-models.ps1 -Models qwen36-27b
 ```
 
-Create a Nemotron local model:
+Results are appended to `logs\benchmark-results.json`.
 
-```bash
-python -m ollama_copilot_fixer \
-	--model-source "hf.co/unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Q4_0" \
-	--model-name "nemotron-copilot"
-```
+> **Headroom:** `qwen36-35b-a3b` at `UD-Q4_K_S` / 200K leaves only ~0.5 GiB.
+> If you also have a desktop compositor or browser using the GPU, drop the
+> profile's `HFFile` to `Qwen3.6-35B-A3B-UD-IQ4_XS.gguf` (16.5 GB → ~20.6 GiB
+> total VRAM at 200K) for a safe ~3 GiB headroom.
 
-Use a GGUF that is already on disk:
-
-```bash
-python -m ollama_copilot_fixer --model-source "C:\\Models\\model.gguf"
-```
-
-## Publish A Fixed Model
-
-The repo also includes a local publish flow that uploads:
-
-- the GGUF
-- a Copilot-compatible `Modelfile`
-- a generated `README.md`
-- the release card from `releases/`
-
-Example:
-
-```bash
-python -m ollama_copilot_fixer publish \
-	--gguf-path "C:\\path\\to\\Qwen3.6-35B-A3B-UD-IQ4_XS.gguf" \
-	--release-card "releases\\qwen36-35b-a3b-ud-iq4xs-128k.md" \
-	--context-length 131072
-```
-
-Use `releases/_template.md` as the starting point for new release cards.
-
-If a publish is interrupted, rerun the same command. The uploader now stages files in the local cache and resumes chunk uploads automatically.
-
-## Useful Commands
-
-```bash
-python -m ollama_copilot_fixer --help
-python -m ollama_copilot_fixer cache info
-python -m ollama_copilot_fixer cache clear
-```
-
-## Notes
-
-- If a model comes as split GGUF shards, install `llama.cpp` and point `--llama-cpp-path` at `llama-gguf-split`.
-- For Qwen3.5 and Qwen3.6, `--probe-template` is the safest path when trying a new quant or variant.
-- Some Nemotron GGUFs still emit plain-text tool markup through Ollama. When that happens, NVIDIA NIM is often the better runtime.
-
-## Non-Goals
-
-This repo does not retune weights, fix broken GGUF exports, or guarantee every upstream model will become Copilot-safe. It focuses on a small set of practical local coding models and making the Unsloth plus Ollama path work reliably with GitHub Copilot.
+## VS Code tasks

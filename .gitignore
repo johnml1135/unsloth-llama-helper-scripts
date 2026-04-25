@@ -1,3 +1,16 @@
+# Local tooling
+.DS_Store
+Thumbs.db
+
+# Logs and runtime state
+logs/
+!logs/.gitkeep
+
+# Downloaded llama.cpp binaries
+tools/
+
+# Downloaded GGUF weights (multi-GB, never commit)
+models/
 # Python
 __pycache__/
 *.py[cod]
