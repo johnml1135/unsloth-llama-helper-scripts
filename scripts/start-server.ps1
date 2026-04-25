@@ -144,13 +144,30 @@ $llamaArgs = @(
     '--metrics'
 )
 
-if ($NoThink) {
-    # Windows PowerShell needs the inner double-quotes escaped.
-    $llamaArgs += @('--chat-template-kwargs', '"{\"enable_thinking\":false}"')
-}
-
 if ($profile.ExtraArgs) {
     $llamaArgs += $profile.ExtraArgs
+}
+
+if ($NoThink) {
+    # Merge enable_thinking:false into any existing --chat-template-kwargs
+    # (e.g., preserve_thinking:true from ExtraArgs) so we don't overwrite it.
+    $existingKwargsIdx = -1
+    for ($i = 0; $i -lt $llamaArgs.Count; $i++) {
+        if ($llamaArgs[$i] -eq '--chat-template-kwargs') {
+            $existingKwargsIdx = $i
+            break
+        }
+    }
+    if ($existingKwargsIdx -ge 0) {
+        # Parse existing JSON, merge in enable_thinking:false
+        $existingRaw = $llamaArgs[$existingKwargsIdx + 1].Trim('"')
+        $existingObj = $existingRaw | ConvertFrom-Json
+        $existingObj | Add-Member -NotePropertyName 'enable_thinking' -NotePropertyValue $false -Force
+        $merged = $existingObj | ConvertTo-Json -Compress
+        $llamaArgs[$existingKwargsIdx + 1] = "`"$merged`""
+    } else {
+        $llamaArgs += @('--chat-template-kwargs', '"{\"enable_thinking\":false}"')
+    }
 }
 
 Write-Host ""

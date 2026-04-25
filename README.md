@@ -150,6 +150,22 @@ From [Unsloth's Qwen3.6 docs](https://unsloth.ai/docs/models/qwen3.6) and
 Disable thinking with `-NoThink` (passes
 `--chat-template-kwargs "{\"enable_thinking\":false}"`).
 
+### Qwen3.6 tool calling fixes
+
+Qwen3.6 models can leak reasoning content or fail to close `<thinking>` tags
+before outputting tool calls, causing the default `qwen3_xml` parser to fail
+with "Request failed" errors. Both Qwen3.6 profiles in the catalog now apply
+two fixes automatically:
+
+1. **`--jinja-tool-call qwen3-coder`** — uses the more aggressive coder parser
+   that detects tool calls mid-stream even without proper closing tags.
+2. **`--chat-template-kwargs "{\"preserve_thinking\":true}"`** — keeps previous
+   reasoning in context so the model doesn't "forget" its plan during
+   multi-turn tool use.
+
+If `-NoThink` is also passed, the script merges `enable_thinking: false` into
+the existing kwargs instead of overwriting `preserve_thinking`.
+
 ## Scripts
 
 | Script                          | Purpose                                                              |
