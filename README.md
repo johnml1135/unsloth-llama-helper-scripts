@@ -17,15 +17,12 @@ Unsloth's own docs state
 [*"Currently no Qwen3.6 GGUF works in Ollama due to separate mmproj vision
 files. Use llama.cpp compatible backends."*](https://unsloth.ai/docs/models/qwen3.6)
 
-VS Code Copilot Chat ships first-class support for any OpenAI-compatible
-endpoint via the `github.copilot.chat.customOAIModels` setting
-([VS Code docs](https://code.visualstudio.com/docs/copilot/customization/language-models),
-shipped per [vscode-copilot-release#7518](https://github.com/microsoft/vscode-copilot-release/issues/7518)
-and agent-mode support per
-[#7832](https://github.com/microsoft/vscode-copilot-release/issues/7832)),
-so llama-server is the path of least resistance.
+Use the **[GitHub Copilot LLM Gateway](https://marketplace.visualstudio.com/items?itemName=AndrewButson.github-copilot-llm-gateway)**
+extension by Andrew Butson to connect Copilot Chat to your local llama-server.
+The extension registers your server's models as a first-class provider inside
+Copilot Chat, with full agent mode and tool calling support.
 
-> Caveat: BYOK powers **chat + agent** only. Inline ghost-text completions stay
+> Caveat: This powers **chat + agent** only. Inline ghost-text completions stay
 > on GitHub-hosted models regardless of which inference backend you pick.
 
 ## Quick start
@@ -50,22 +47,60 @@ First launch downloads the GGUF weights to `models\` (controlled via
 
 ## Wire VS Code Copilot Chat to it
 
-`start-server.ps1` prints the exact JSON snippet on launch. Add it to your VS
-Code `settings.json`:
+### 1. Install the GitHub Copilot LLM Gateway extension
+
+Install **[GitHub Copilot LLM Gateway](https://marketplace.visualstudio.com/items?itemName=AndrewButson.github-copilot-llm-gateway)**
+(`AndrewButson.github-copilot-llm-gateway`) from the VS Code Marketplace. This
+workspace also lists it as a recommended extension — accept the prompt when you
+open the folder, or install it from the Extensions view.
+
+### 2. Configure the extension
+
+The extension settings are under `github.copilot.llm-gateway.*`. The workspace
+`.vscode/settings.json` already includes the defaults below, but you can
+override them in your user settings if needed:
 
 ```jsonc
-"github.copilot.chat.customOAIModels": [
-  {
-    "name":    "qwen3.6-35b-a3b (local)",
-    "url":     "http://127.0.0.1:8080/v1",
-    "apiKey":  "sk-no-key-required",
-    "modelId": "qwen3.6-35b-a3b"
-  }
-]
+// .vscode/settings.json (already included in this repo)
+"github.copilot.llm-gateway.serverUrl": "http://127.0.0.1:8080",
+"github.copilot.llm-gateway.apiKey": "",
+"github.copilot.llm-gateway.requestTimeout": 60000,
+"github.copilot.llm-gateway.defaultMaxTokens": 262144,
+"github.copilot.llm-gateway.defaultMaxOutputTokens": 4096,
+"github.copilot.llm-gateway.enableToolCalling": true,
+"github.copilot.llm-gateway.parallelToolCalling": true,
+"github.copilot.llm-gateway.agentTemperature": 0.0
 ```
 
-> The custom-OpenAI-models UI is in VS Code Insiders 1.104+; in Stable you must
-> edit `settings.json` directly.
+> **Important:** Set the `serverUrl` to the **base URL only** — do NOT include
+> `/v1` or a trailing slash. The extension appends `/v1/models` itself.
+
+### 3. Start the llama-server
+
+```powershell
+./scripts/start-server.ps1
+```
+
+Pick a model from the menu. The server listens on `http://127.0.0.1:8080/v1`.
+
+### 4. Verify the connection
+
+Open the Command Palette (`Ctrl+Shift+P`) and run:
+
+- **GitHub Copilot LLM Gateway: Test Server Connection** — confirms connectivity
+  and lists discovered models
+
+### 5. Select a model in Copilot Chat
+
+1. Open Copilot Chat (`Ctrl+Alt+I`)
+2. Click the **model selector** dropdown at the bottom
+3. Click **"Manage Models..."**
+4. Select **"LLM Gateway"** as the provider
+5. Enable the model(s) you want to use
+
+The extension auto-discovers whatever model is currently loaded on llama-server.
+See [the extension docs](https://github.com/arbs-io/github-copilot-llm-gateway)
+for more details on tool calling, agent mode, and troubleshooting.
 
 ## Curated model catalog (24 GB profiles)
 
