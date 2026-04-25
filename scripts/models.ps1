@@ -52,8 +52,7 @@ $global:LlamaModelCatalog = [ordered]@{
         Size       = '19.5 GB'
         Family     = 'qwen36'
         ExtraArgs  = @(
-            '--jinja-tool-call', 'qwen3-coder'
-            '--chat-template-kwargs', '"{\"preserve_thinking\":true}"'
+            '--chat-template-kwargs', '"{\"preserve_thinking\":true,\"tool_parser\":\"qwen3_coder\"}"'
         )
         Notes      = 'Measured 23.6 GiB @ 200K -- TIGHT (~0.5 GiB free). Drop to UD-IQ4_XS (16.5 GB) for ~3 GiB headroom.'
     }
@@ -69,8 +68,7 @@ $global:LlamaModelCatalog = [ordered]@{
         Size       = '14.4 GB'
         Family     = 'qwen36'
         ExtraArgs  = @(
-            '--jinja-tool-call', 'qwen3-coder'
-            '--chat-template-kwargs', '"{\"preserve_thinking\":true}"'
+            '--chat-template-kwargs', '"{\"preserve_thinking\":true,\"tool_parser\":\"qwen3_coder\"}"'
         )
         Notes      = 'Hybrid: 16 of 64 layers full-attn (GQA 24:4), 48 Gated DeltaNet. Measured 23.0 GiB @ 200K (~1 GiB free).'
     }

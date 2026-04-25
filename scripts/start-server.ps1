@@ -133,7 +133,6 @@ $llamaArgs = @(
     '--flash-attn',      'on'
     '--cache-type-k',    'q8_0'
     '--cache-type-v',    'q8_0'
-    '--jinja'                                  # GGUF chat template + tool grammar
     '--temp',            $family.Temp
     '--top-p',           $family.TopP
     '--top-k',           $family.TopK
@@ -159,12 +158,11 @@ if ($NoThink) {
         }
     }
     if ($existingKwargsIdx -ge 0) {
-        # Parse existing JSON, merge in enable_thinking:false
-        $existingRaw = $llamaArgs[$existingKwargsIdx + 1].Trim('"')
-        $existingObj = $existingRaw | ConvertFrom-Json
-        $existingObj | Add-Member -NotePropertyName 'enable_thinking' -NotePropertyValue $false -Force
-        $merged = $existingObj | ConvertTo-Json -Compress
-        $llamaArgs[$existingKwargsIdx + 1] = "`"$merged`""
+    $existingRaw = $llamaArgs[$existingKwargsIdx + 1].Trim('"').Replace('\"', '"') # Fix double escaping
+    $existingObj = $existingRaw | ConvertFrom-Json
+    # ... existing merge logic ...
+    $merged = $existingObj | ConvertTo-Json -Compress
+    $llamaArgs[$existingKwargsIdx + 1] = $merged # Pass as raw string, Start-Process handles the rest
     } else {
         $llamaArgs += @('--chat-template-kwargs', '"{\"enable_thinking\":false}"')
     }
