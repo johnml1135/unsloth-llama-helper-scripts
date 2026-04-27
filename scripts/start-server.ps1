@@ -133,6 +133,7 @@ $llamaArgs = @(
     '--flash-attn',      'on'
     '--cache-type-k',    'q8_0'
     '--cache-type-v',    'q8_0'
+    '--jinja'
     '--temp',            $family.Temp
     '--top-p',           $family.TopP
     '--top-k',           $family.TopK
@@ -147,25 +148,25 @@ if ($profile.ExtraArgs) {
     $llamaArgs += $profile.ExtraArgs
 }
 
+# Qwen3.6 is prone to emitting tool calls before closing its thinking block.
+# Keep prior thinking in context and use llama.cpp's more forgiving coder parser.
+$templateKwargs = [ordered]@{}
+if ($profile.Family -eq 'qwen36') {
+    $templateKwargs['preserve_thinking'] = $true
+    $templateKwargs['tool_parser'] = 'qwen3_coder'
+    $llamaArgs += @('--reasoning-format', 'deepseek')
+}
+
 if ($NoThink) {
-    # Merge enable_thinking:false into any existing --chat-template-kwargs
-    # (e.g., preserve_thinking:true from ExtraArgs) so we don't overwrite it.
-    $existingKwargsIdx = -1
-    for ($i = 0; $i -lt $llamaArgs.Count; $i++) {
-        if ($llamaArgs[$i] -eq '--chat-template-kwargs') {
-            $existingKwargsIdx = $i
-            break
-        }
-    }
-    if ($existingKwargsIdx -ge 0) {
-    $existingRaw = $llamaArgs[$existingKwargsIdx + 1].Trim('"').Replace('\"', '"') # Fix double escaping
-    $existingObj = $existingRaw | ConvertFrom-Json
-    # ... existing merge logic ...
-    $merged = $existingObj | ConvertTo-Json -Compress
-    $llamaArgs[$existingKwargsIdx + 1] = $merged # Pass as raw string, Start-Process handles the rest
-    } else {
-        $llamaArgs += @('--chat-template-kwargs', '"{\"enable_thinking\":false}"')
-    }
+    $templateKwargs['enable_thinking'] = $false
+}
+
+if ($templateKwargs.Count -gt 0) {
+    $kwargsJson = $templateKwargs | ConvertTo-Json -Compress
+    $env:LLAMA_CHAT_TEMPLATE_KWARGS = $kwargsJson
+} else {
+    $kwargsJson = $null
+    Remove-Item Env:\LLAMA_CHAT_TEMPLATE_KWARGS -ErrorAction SilentlyContinue
 }
 
 Write-Host ""
@@ -175,6 +176,9 @@ Write-Host "  HF repo     : $($profile.HFRepo)"
 Write-Host "  HF file     : $($profile.HFFile)  ($($profile.Quant), $($profile.Size))"
 Write-Host "  Alias       : $($profile.Alias)"
 Write-Host "  Context     : $ctx (native max $($profile.MaxContext))"
+if ($kwargsJson) {
+    Write-Host "  Template    : $kwargsJson"
+}
 Write-Host "  Cache (HF)  : $modelsDir"
 Write-Host "  Listen      : http://$ListenHost`:$Port  (OpenAI-compatible /v1)"
 Write-Host "  Log         : $logFile"
@@ -208,6 +212,7 @@ $info = [ordered]@{
     BaseUrl   = "http://$ListenHost`:$Port/v1"
     StartedAt = (Get-Date).ToString('o')
     NoThink   = [bool]$NoThink
+    TemplateKwargs = $kwargsJson
 }
 $info | ConvertTo-Json | Set-Content -Path $infoFile -Encoding ascii
 

@@ -42,7 +42,7 @@
 $global:LlamaModelCatalog = [ordered]@{
 
     'qwen36-35b-a3b' = @{
-        Name       = 'Qwen3.6 35B-A3B (MoE, recommended)'
+        Name       = 'Qwen3.6 35B-A3B (MoE, fast local coding)'
         HFRepo     = 'unsloth/Qwen3.6-35B-A3B-GGUF'
         HFFile     = 'Qwen3.6-35B-A3B-UD-Q4_K_S.gguf'
         Quant      = 'UD-Q4_K_S'
@@ -51,14 +51,11 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '19.5 GB'
         Family     = 'qwen36'
-        ExtraArgs  = @(
-            '--chat-template-kwargs', '"{\"preserve_thinking\":true,\"tool_parser\":\"qwen3_coder\"}"'
-        )
-        Notes      = 'Measured 23.6 GiB @ 200K -- TIGHT (~0.5 GiB free). Drop to UD-IQ4_XS (16.5 GB) for ~3 GiB headroom.'
+        Notes      = 'Fast MoE profile. Measured 23.6 GiB @ 200K -- TIGHT (~0.5 GiB free). Use qwen36-27b for stricter structured/tool-heavy coding.'
     }
 
     'qwen36-27b' = @{
-        Name       = 'Qwen3.6 27B (hybrid attention)'
+        Name       = 'Qwen3.6 27B (dense/hybrid, recommended for tools)'
         HFRepo     = 'unsloth/Qwen3.6-27B-GGUF'
         HFFile     = 'Qwen3.6-27B-IQ4_XS.gguf'
         Quant      = 'IQ4_XS'
@@ -67,10 +64,7 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '14.4 GB'
         Family     = 'qwen36'
-        ExtraArgs  = @(
-            '--chat-template-kwargs', '"{\"preserve_thinking\":true,\"tool_parser\":\"qwen3_coder\"}"'
-        )
-        Notes      = 'Hybrid: 16 of 64 layers full-attn (GQA 24:4), 48 Gated DeltaNet. Measured 23.0 GiB @ 200K (~1 GiB free).'
+        Notes      = 'Dense coding profile with stronger structured outputs. Uses q8_0 KV for tool-call reliability; measured 23.0 GiB @ 200K (~1 GiB free).'
     }
 
     'gemma4-26b-a4b' = @{

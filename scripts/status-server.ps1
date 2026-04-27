@@ -51,6 +51,9 @@ if ($info) {
     Write-Host ("  Context     : {0}" -f $info.Context)
     Write-Host ("  Endpoint    : {0}" -f $info.BaseUrl)
     Write-Host ("  NoThink     : {0}" -f $info.NoThink)
+    if ($info.TemplateKwargs) {
+        Write-Host ("  Template    : {0}" -f $info.TemplateKwargs)
+    }
 }
 
 # -- Probe HTTP endpoint ------------------------------------------------------

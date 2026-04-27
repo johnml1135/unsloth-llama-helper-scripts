@@ -111,8 +111,8 @@ actual card usage.
 
 | Key               | Model                       | Quant         | Size     | Context (24 GB) | Native max | Notes                                                                                              |
 | ----------------- | --------------------------- | ------------- | -------- | --------------- | ---------- | -------------------------------------------------------------------------------------------------- |
-| `qwen36-35b-a3b`  | Qwen3.6 35B-A3B (MoE)       | `UD-Q4_K_S`   | ~19.5 GB | **200 000**     | 262 144    | Recommended. MoE → tiny KV. Tight fit — drop to `UD-IQ4_XS` (16.5 GB) for ~3 GiB headroom.        |
-| `qwen36-27b`      | Qwen3.6 27B (hybrid)        | `IQ4_XS`      | ~14.4 GB | **200 000**     | 262 144    | 16 of 64 layers full-attn (GQA 24:4), 48 Gated DeltaNet — KV barely grows with ctx.                |
+| `qwen36-35b-a3b`  | Qwen3.6 35B-A3B (MoE)       | `UD-Q4_K_S`   | ~19.5 GB | **200 000**     | 262 144    | Fast MoE profile. Tight fit — use `qwen36-27b` for stricter structured/tool-heavy coding.          |
+| `qwen36-27b`      | Qwen3.6 27B (dense/hybrid)  | `IQ4_XS`      | ~14.4 GB | **200 000**     | 262 144    | Recommended for agentic coding and tool calls. Uses `q8_0` KV because low-bit KV can break tools.  |
 | `gemma4-26b-a4b`  | Gemma 4 26B-A4B (MoE)       | `UD-Q5_K_S`   | ~17.5 GB | **200 000**     | 262 144    | Comfortable fit; multimodal weights downloaded but unused.                                         |
 | `gemma4-31b`      | Gemma 4 31B (dense)         | `IQ4_XS`      | ~15.3 GB | **131 072**     | 262 144    | 60 layers, 10 full-attn + 50 sliding-window-1024. No headroom to push past 128K.                   |
 
@@ -147,24 +147,30 @@ From [Unsloth's Qwen3.6 docs](https://unsloth.ai/docs/models/qwen3.6) and
 | Qwen3.6 (precise coding, thinking) | 0.6 | 0.95 | 20 | 0.0 | 0.0 | 1.0 |
 | Gemma 4 (Google defaults)          | 1.0 | 0.95 | 64 | 0.0 | 0.0 | 1.0 |
 
-Disable thinking with `-NoThink` (passes
-`--chat-template-kwargs "{\"enable_thinking\":false}"`).
+Disable thinking with `-NoThink`. The script merges `enable_thinking: false`
+into `LLAMA_CHAT_TEMPLATE_KWARGS` without dropping the Qwen tool-call fixes.
 
 ### Qwen3.6 tool calling fixes
 
 Qwen3.6 models can leak reasoning content or fail to close `<thinking>` tags
-before outputting tool calls, causing the default `qwen3_xml` parser to fail
-with "Request failed" errors. Both Qwen3.6 profiles in the catalog now apply
-two fixes automatically:
+before outputting tool calls, causing strict XML-style parsing to fail with
+"Request failed" errors. For Qwen3.6 profiles, `start-server.ps1` now sets:
 
-1. **`--jinja-tool-call qwen3-coder`** — uses the more aggressive coder parser
-   that detects tool calls mid-stream even without proper closing tags.
-2. **`--chat-template-kwargs "{\"preserve_thinking\":true}"`** — keeps previous
-   reasoning in context so the model doesn't "forget" its plan during
-   multi-turn tool use.
+```powershell
+LLAMA_CHAT_TEMPLATE_KWARGS={"preserve_thinking":true,"tool_parser":"qwen3_coder"}
+--reasoning-format deepseek
+```
 
-If `-NoThink` is also passed, the script merges `enable_thinking: false` into
-the existing kwargs instead of overwriting `preserve_thinking`.
+That keeps prior reasoning in context for multi-turn tool use, selects the more
+forgiving Qwen coder tool parser, and extracts `<think>` content away from normal
+assistant text where supported by the installed `llama-server` build. `-NoThink`
+only adds `enable_thinking:false`; it keeps `preserve_thinking` and the parser
+selection intact.
+
+The scripts also deliberately keep Qwen KV cache at `q8_0` and do not enable
+n-gram speculative decoding by default. Community reports show low-bit KV and
+ngram speculative decoding can hurt coding/tool-call reliability even when they
+improve speed.
 
 ## Scripts
 
@@ -176,6 +182,7 @@ the existing kwargs instead of overwriting `preserve_thinking`.
 | `scripts\stop-server.ps1`       | Stop the background server.                                          |
 | `scripts\models.ps1`            | Model catalog & sampler defaults (edit to add or tune profiles).     |
 | `scripts\benchmark-models.ps1`  | Loads each catalog model, measures VRAM, runs a one-shot inference.  |
+| `scripts\inspect-copilot-context.ps1` | Summarize Copilot prompt sizes and llama-server prompt tokens. |
 
 ## Measured GPU RAM
 
