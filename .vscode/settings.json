@@ -13,6 +13,6 @@
     "github.copilot.llm-gateway.defaultMaxTokens": 150000,
     "github.copilot.llm-gateway.defaultMaxOutputTokens": 4096,
     "github.copilot.llm-gateway.enableToolCalling": true,
-    "github.copilot.llm-gateway.parallelToolCalling": true,
+    "github.copilot.llm-gateway.parallelToolCalling": false,
     "github.copilot.llm-gateway.agentTemperature": 0.0
 }

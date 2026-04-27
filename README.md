@@ -64,16 +64,22 @@ override them in your user settings if needed:
 // .vscode/settings.json (already included in this repo)
 "github.copilot.llm-gateway.serverUrl": "http://127.0.0.1:8080",
 "github.copilot.llm-gateway.apiKey": "",
-"github.copilot.llm-gateway.requestTimeout": 60000,
-"github.copilot.llm-gateway.defaultMaxTokens": 262144,
+"github.copilot.llm-gateway.requestTimeout": 600000,
+"github.copilot.llm-gateway.defaultMaxTokens": 150000,
 "github.copilot.llm-gateway.defaultMaxOutputTokens": 4096,
 "github.copilot.llm-gateway.enableToolCalling": true,
-"github.copilot.llm-gateway.parallelToolCalling": true,
+"github.copilot.llm-gateway.parallelToolCalling": false,
 "github.copilot.llm-gateway.agentTemperature": 0.0
 ```
 
 > **Important:** Set the `serverUrl` to the **base URL only** — do NOT include
 > `/v1` or a trailing slash. The extension appends `/v1/models` itself.
+
+The 150K advertised context leaves roughly 50K tokens of headroom when the
+server is running a 200K profile. That reserve matters for Qwen thinking,
+generation, and tool-call continuation. Parallel tool calling is disabled by
+default because serial calls are slower but more reliable on local Qwen; turn it
+back on after your tool calls are stable.
 
 ### 3. Start the llama-server
 
@@ -101,6 +107,82 @@ Open the Command Palette (`Ctrl+Shift+P`) and run:
 The extension auto-discovers whatever model is currently loaded on llama-server.
 See [the extension docs](https://github.com/arbs-io/github-copilot-llm-gateway)
 for more details on tool calling, agent mode, and troubleshooting.
+
+## Initialize Copilot for local agents
+
+This repo includes a small Copilot customization bundle for people using a
+single 24 GB GPU with a local LLM Gateway model. It installs five skills that
+teach Copilot to keep context small, delegate focused research to subagents, and
+debug local tool-call failures without stuffing the whole session into Qwen.
+
+Run the initializer and choose whether to install into your **user profile** or
+into a **repository**:
+
+```powershell
+.\scripts\initialize-copilot-local-agent.ps1
+```
+
+Non-interactive examples:
+
+```powershell
+# Install skills to ~\.copilot\skills and settings to VS Code User settings
+.\scripts\initialize-copilot-local-agent.ps1 -Scope User
+
+# Install skills/settings into another repo
+.\scripts\initialize-copilot-local-agent.ps1 -Scope Repo -RepoPath C:\src\my-repo
+```
+
+Repo installs write:
+
+- `.github\skills\...`
+- `.vscode\settings.json`
+
+User installs write:
+
+- `~\.copilot\skills\...`
+- `%APPDATA%\Code\User\settings.json` on Windows
+
+Existing settings files are backed up before being rewritten. Existing skill
+folders are skipped unless you pass `-Force`.
+
+Installed skills:
+
+| Skill | Use it for |
+| ----- | ---------- |
+| `local-context-budget` | Inspecting prompt bloat, context reserve, and token-heavy Copilot sessions. |
+| `local-repo-triage` | Finding only the files needed for a coding task before implementation. |
+| `local-subagent-delegation` | Using same-model fresh-context subagents for focused research or review. |
+| `local-tool-reliability` | Stabilizing Qwen/llama-server/LLM Gateway tool calls. |
+| `local-session-handoff` | Compressing a long local-agent session into a fresh-chat checkpoint. |
+
+After installing, restart or reload VS Code if the skills do not immediately
+appear in the `/` menu. The skills are intentionally task-specific rather than
+always-on instructions, so they do not burn context unless Copilot loads them for
+a relevant request.
+
+The skills are now structured for progressive loading instead of carrying their
+rationale in the main instruction body. Discovery stays in the frontmatter
+`description`, action steps stay in each `SKILL.md`, and the supporting research
+lives in per-skill `references/evidence.md` files plus the shared
+[.github/skills/REFERENCES.md](.github/skills/REFERENCES.md). This matches the
+VS Code skill-loading model: concise procedural bodies, heavier references only
+when needed.
+
+Headline numbers that drive the defaults:
+
+- RULER puts Qwen3-30B-A3B's *effective* context at **64K** despite a 128K
+  claim — accuracy drops from 96.5 @ 4K to 79.2 @ 128K. The repo's installer
+  therefore defaults `defaultMaxTokens` to 150K (well below server max) and the
+  skills treat **32K as the high-quality zone** and **64K as a soft ceiling**.
+- Anthropic's multi-agent post shows token usage alone explains ~80% of agent
+  performance variance, and that multi-agent systems use ~15× more tokens than
+  chat — so on a single GPU with no parallelism, subagents are for *context
+  isolation*, not speed.
+- The Berkeley Function-Calling Leaderboard shows every model degrades with
+  more tools (a quantized Llama-3.1-8B failed with 46 tools, succeeded with
+  19), which is why `parallelToolCalling` defaults to `false` and the tool
+  reliability skill recommends trimming the tool surface before debugging the
+  parser.
 
 ## Curated model catalog (24 GB profiles)
 
@@ -183,6 +265,7 @@ improve speed.
 | `scripts\models.ps1`            | Model catalog & sampler defaults (edit to add or tune profiles).     |
 | `scripts\benchmark-models.ps1`  | Loads each catalog model, measures VRAM, runs a one-shot inference.  |
 | `scripts\inspect-copilot-context.ps1` | Summarize Copilot prompt sizes and llama-server prompt tokens. |
+| `scripts\initialize-copilot-local-agent.ps1` | Install minimal-context skills and LLM Gateway settings into a repo or user profile. |
 
 ## Measured GPU RAM
 
