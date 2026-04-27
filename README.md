@@ -187,16 +187,31 @@ Headline numbers that drive the defaults:
 ## Curated model catalog (24 GB profiles)
 
 Defined in [scripts/models.ps1](scripts/models.ps1). Quants and contexts are
-picked per model so that each fits a single 24 GB GPU with `q8_0` KV. Three of
-the four profiles run at 200K context; see **Measured GPU RAM** below for
-actual card usage.
+picked per model so that each fits a single 24 GB GPU with `q8_0` KV. The first
+four profiles are the conservative defaults; profiles 5 and 6 are opt-in
+`ngram-mod` speed experiments for repetitive Qwen 27B sessions. See **Measured
+GPU RAM** below for actual card usage.
 
 | Key               | Model                       | Quant         | Size     | Context (24 GB) | Native max | Notes                                                                                              |
 | ----------------- | --------------------------- | ------------- | -------- | --------------- | ---------- | -------------------------------------------------------------------------------------------------- |
 | `qwen36-35b-a3b`  | Qwen3.6 35B-A3B (MoE)       | `UD-Q4_K_S`   | ~19.5 GB | **200 000**     | 262 144    | Fast MoE profile. Tight fit — use `qwen36-27b` for stricter structured/tool-heavy coding.          |
 | `qwen36-27b`      | Qwen3.6 27B (dense/hybrid)  | `IQ4_XS`      | ~14.4 GB | **200 000**     | 262 144    | Recommended for agentic coding and tool calls. Uses `q8_0` KV because low-bit KV can break tools.  |
+| `qwen36-27b-ngram-general` | Qwen3.6 27B (ngram speed, general) | `IQ4_XS` | ~14.4 GB | **128 000** | 262 144 | Experimental `ngram-mod` preset adapted from the Reddit speed thread. Higher variance; best for repetitive rewrite/summarize loops, not tool reliability. |
+| `qwen36-27b-ngram-coding` | Qwen3.6 27B (ngram speed, coding) | `IQ4_XS` | ~14.4 GB | **128 000** | 262 144 | Experimental coding-speed preset using the corrected Reddit flags and standard Qwen coding sampler. Keeps the stable profile separate. |
 | `gemma4-26b-a4b`  | Gemma 4 26B-A4B (MoE)       | `UD-Q5_K_S`   | ~17.5 GB | **200 000**     | 262 144    | Comfortable fit; multimodal weights downloaded but unused.                                         |
 | `gemma4-31b`      | Gemma 4 31B (dense)         | `IQ4_XS`      | ~15.3 GB | **131 072**     | 262 144    | 60 layers, 10 full-attn + 50 sliding-window-1024. No headroom to push past 128K.                   |
+
+Profiles `qwen36-27b-ngram-general` and `qwen36-27b-ngram-coding` map to menu
+items 5 and 6 in `start-server.ps1`. They use:
+
+```text
+--spec-type ngram-mod --spec-ngram-size-n 24 --draft-min 12 --draft-max 48
+```
+
+Those settings came from the corrected Reddit follow-up config rather than the
+original post text. They are intentionally capped at 128K context on this repo's
+24 GB `IQ4_XS` setup, because the original report used a 40 GB machine and a
+Q8_0 model.
 
 ### Why these contexts?
 
@@ -252,7 +267,8 @@ selection intact.
 The scripts also deliberately keep Qwen KV cache at `q8_0` and do not enable
 n-gram speculative decoding by default. Community reports show low-bit KV and
 ngram speculative decoding can hurt coding/tool-call reliability even when they
-improve speed.
+improve speed. The new `qwen36-27b-ngram-*` profiles are isolated experiments,
+not recommended defaults for Copilot agent sessions.
 
 ## Scripts
 

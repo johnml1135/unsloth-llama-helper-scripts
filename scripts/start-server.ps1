@@ -118,6 +118,12 @@ $profile = $global:LlamaModelCatalog[$Model]
 $family  = $global:LlamaFamilyDefaults[$profile.Family]
 
 $ctx = if ($ContextOverride) { $ContextOverride } else { $profile.Context }
+$temp = if ($profile.ContainsKey('Temp')) { $profile.Temp } else { $family.Temp }
+$topP = if ($profile.ContainsKey('TopP')) { $profile.TopP } else { $family.TopP }
+$topK = if ($profile.ContainsKey('TopK')) { $profile.TopK } else { $family.TopK }
+$minP = if ($profile.ContainsKey('MinP')) { $profile.MinP } else { $family.MinP }
+$presencePenalty = if ($profile.ContainsKey('PresencePenalty')) { $profile.PresencePenalty } else { $family.PresencePenalty }
+$repeatPenalty = if ($profile.ContainsKey('RepeatPenalty')) { $profile.RepeatPenalty } else { $family.RepeatPenalty }
 
 # -- Build llama-server arg vector --------------------------------------------
 $env:LLAMA_CACHE = $modelsDir
@@ -134,12 +140,12 @@ $llamaArgs = @(
     '--cache-type-k',    'q8_0'
     '--cache-type-v',    'q8_0'
     '--jinja'
-    '--temp',            $family.Temp
-    '--top-p',           $family.TopP
-    '--top-k',           $family.TopK
-    '--min-p',           $family.MinP
-    '--presence-penalty',$family.PresencePenalty
-    '--repeat-penalty',  $family.RepeatPenalty
+    '--temp',            $temp
+    '--top-p',           $topP
+    '--top-k',           $topK
+    '--min-p',           $minP
+    '--presence-penalty',$presencePenalty
+    '--repeat-penalty',  $repeatPenalty
     '--parallel',        '1'
     '--metrics'
 )

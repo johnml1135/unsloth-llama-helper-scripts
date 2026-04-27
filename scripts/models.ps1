@@ -36,6 +36,8 @@
 #   MaxContext : the model's native max (for documentation only)
 #   Size       : on-disk weight size at the chosen quant (verified vs HF)
 #   Family     : 'qwen36' | 'gemma4' (controls samplers)
+#   Temp/TopP/TopK/MinP/PresencePenalty/RepeatPenalty
+#              : optional per-profile sampler overrides
 #   ExtraArgs  : array of llama-server args appended verbatim
 #   Notes      : free-form caveats shown in the menu
 
@@ -93,6 +95,46 @@ $global:LlamaModelCatalog = [ordered]@{
         Family     = 'gemma4'
         ExtraArgs  = @()
         Notes      = 'Dense 60-layer with 1-in-6 full-attn (10 full + 50 sliding-1024). Measured 23.0 GiB @ 128K (no headroom for 200K).'
+    }
+
+    'qwen36-27b-ngram-general' = @{
+        Name            = 'Qwen3.6 27B (experimental ngram speed, general)'
+        HFRepo          = 'unsloth/Qwen3.6-27B-GGUF'
+        HFFile          = 'Qwen3.6-27B-IQ4_XS.gguf'
+        Quant           = 'IQ4_XS'
+        Alias           = 'qwen3.6-27b-ngram-general'
+        Context         = 128000
+        MaxContext      = 262144
+        Size            = '14.4 GB'
+        Family          = 'qwen36'
+        Temp            = '1.0'
+        PresencePenalty = '1.5'
+        ExtraArgs       = @(
+            '--spec-type', 'ngram-mod',
+            '--spec-ngram-size-n', '24',
+            '--draft-min', '12',
+            '--draft-max', '48'
+        )
+        Notes           = 'Experimental speed preset adapted from the Reddit ngram-mod setup. Uses 128K ctx on the 24 GB IQ4_XS build. Best for repetitive rewrite/summarize loops; can regress or destabilize tool use.'
+    }
+
+    'qwen36-27b-ngram-coding' = @{
+        Name       = 'Qwen3.6 27B (experimental ngram speed, coding)'
+        HFRepo     = 'unsloth/Qwen3.6-27B-GGUF'
+        HFFile     = 'Qwen3.6-27B-IQ4_XS.gguf'
+        Quant      = 'IQ4_XS'
+        Alias      = 'qwen3.6-27b-ngram-coding'
+        Context    = 128000
+        MaxContext = 262144
+        Size       = '14.4 GB'
+        Family     = 'qwen36'
+        ExtraArgs  = @(
+            '--spec-type', 'ngram-mod',
+            '--spec-ngram-size-n', '24',
+            '--draft-min', '12',
+            '--draft-max', '48'
+        )
+        Notes      = 'Experimental coding-speed preset using the corrected Reddit flags at 128K ctx. Keeps the standard Qwen coding sampler, but ngram-mod can still leak prior phrasing or break tool-heavy sessions.'
     }
 }
 
