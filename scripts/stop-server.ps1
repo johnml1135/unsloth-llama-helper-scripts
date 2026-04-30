@@ -43,6 +43,24 @@ if (-not $proc) {
     return
 }
 
+if ($proc.ProcessName -ne 'llama-server') {
+    Write-Host "PID $serverPid is not llama-server (it's $($proc.ProcessName)); PID file is stale." -ForegroundColor Yellow
+    Remove-StateFiles
+    # Fall back to process-name match
+    $procs = Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue
+    if ($procs) {
+        foreach ($p in $procs) {
+            Write-Host "Stopping llama-server PID $($p.Id)..." -ForegroundColor Cyan
+            Stop-Process -Id $p.Id -Force
+        }
+        Write-Host "Stopped." -ForegroundColor Green
+    }
+    else {
+        Write-Host "No llama-server process found." -ForegroundColor Yellow
+    }
+    return
+}
+
 Write-Host "Stopping llama-server PID $serverPid..." -ForegroundColor Cyan
 Stop-Process -Id $serverPid -Force
 Remove-StateFiles
