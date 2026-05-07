@@ -55,6 +55,7 @@ $logFile  = Join-Path $logDir   'llama-server.log'
 $pidFile  = Join-Path $logDir   'llama-server.pid'
 $infoFile = Join-Path $logDir   'llama-server.info.json'
 $modelsDir = Join-Path $repoRoot 'models'
+$qwenTemplateFile = Join-Path $PSScriptRoot 'templates\qwen36-tool-fix.jinja'
 
 New-Item -ItemType Directory -Force -Path $logDir, $modelsDir | Out-Null
 
@@ -152,6 +153,13 @@ $llamaArgs = @(
 
 if ($profile.ExtraArgs) {
     $llamaArgs += $profile.ExtraArgs
+}
+
+if ($profile.Family -eq 'qwen36') {
+    if (-not (Test-Path $qwenTemplateFile)) {
+        throw "Missing Qwen chat template file: $qwenTemplateFile"
+    }
+    $llamaArgs += @('--chat-template-file', $qwenTemplateFile)
 }
 
 # Qwen3.6 is prone to emitting tool calls before closing its thinking block.

@@ -187,15 +187,16 @@ Headline numbers that drive the defaults:
 ## Curated model catalog (24 GB profiles)
 
 Defined in [scripts/models.ps1](scripts/models.ps1). Quants and contexts are
-picked per model so that each fits a single 24 GB GPU with `q8_0` KV. The first
-four profiles are the conservative defaults; profiles 5 and 6 are opt-in
-`ngram-mod` speed experiments for repetitive Qwen 27B sessions. See **Measured
-GPU RAM** below for actual card usage.
+picked per model so that each fits a single 24 GB GPU with `q8_0` KV. The Qwen
+3.6 27B profile is listed first because it is the safer agentic/tool-use choice;
+the remaining profiles are conservative defaults, and profiles 3 and 4 are opt-
+in `ngram-mod` speed experiments for repetitive Qwen 27B sessions. See
+**Measured GPU RAM** below for actual card usage.
 
 | Key               | Model                       | Quant         | Size     | Context (24 GB) | Native max | Notes                                                                                              |
 | ----------------- | --------------------------- | ------------- | -------- | --------------- | ---------- | -------------------------------------------------------------------------------------------------- |
-| `qwen36-35b-a3b`  | Qwen3.6 35B-A3B (MoE)       | `UD-Q4_K_S`   | ~19.5 GB | **200 000**     | 262 144    | Fast MoE profile. Tight fit — use `qwen36-27b` for stricter structured/tool-heavy coding.          |
 | `qwen36-27b`      | Qwen3.6 27B (dense/hybrid)  | `IQ4_XS`      | ~14.4 GB | **200 000**     | 262 144    | Recommended for agentic coding and tool calls. Uses `q8_0` KV because low-bit KV can break tools.  |
+| `qwen36-35b-a3b`  | Qwen3.6 35B-A3B (MoE)       | `UD-Q4_K_S`   | ~19.5 GB | **200 000**     | 262 144    | Fast MoE profile. Tight fit — use `qwen36-27b` first for stricter structured/tool-heavy coding.    |
 | `qwen36-27b-ngram-general` | Qwen3.6 27B (ngram speed, general) | `IQ4_XS` | ~14.4 GB | **128 000** | 262 144 | Experimental `ngram-mod` preset adapted from the Reddit speed thread. Higher variance; best for repetitive rewrite/summarize loops, not tool reliability. |
 | `qwen36-27b-ngram-coding` | Qwen3.6 27B (ngram speed, coding) | `IQ4_XS` | ~14.4 GB | **128 000** | 262 144 | Experimental coding-speed preset using the corrected Reddit flags and standard Qwen coding sampler. Keeps the stable profile separate. |
 | `gemma4-26b-a4b`  | Gemma 4 26B-A4B (MoE)       | `UD-Q5_K_S`   | ~17.5 GB | **200 000**     | 262 144    | Comfortable fit; multimodal weights downloaded but unused.                                         |
@@ -251,7 +252,10 @@ into `LLAMA_CHAT_TEMPLATE_KWARGS` without dropping the Qwen tool-call fixes.
 
 Qwen3.6 models can leak reasoning content or fail to close `<thinking>` tags
 before outputting tool calls, causing strict XML-style parsing to fail with
-"Request failed" errors. For Qwen3.6 profiles, `start-server.ps1` now sets:
+"Request failed" errors. That issue is especially noticeable on older builds
+and in the 35B-A3B profile; the 27B profile is the safer default for Copilot
+agent sessions. For Qwen3.6 profiles, `start-server.ps1` now uses the local
+fixed template at [scripts/templates/qwen36-tool-fix.jinja](scripts/templates/qwen36-tool-fix.jinja) and sets:
 
 ```powershell
 LLAMA_CHAT_TEMPLATE_KWARGS={"preserve_thinking":true,"tool_parser":"qwen3_coder"}

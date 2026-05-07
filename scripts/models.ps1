@@ -43,19 +43,6 @@
 
 $global:LlamaModelCatalog = [ordered]@{
 
-    'qwen36-35b-a3b' = @{
-        Name       = 'Qwen3.6 35B-A3B (MoE, fast local coding)'
-        HFRepo     = 'unsloth/Qwen3.6-35B-A3B-GGUF'
-        HFFile     = 'Qwen3.6-35B-A3B-UD-Q4_K_S.gguf'
-        Quant      = 'UD-Q4_K_S'
-        Alias      = 'qwen3.6-35b-a3b'
-        Context    = 200000
-        MaxContext = 262144
-        Size       = '19.5 GB'
-        Family     = 'qwen36'
-        Notes      = 'Fast MoE profile. Measured 23.6 GiB @ 200K -- TIGHT (~0.5 GiB free). Use qwen36-27b for stricter structured/tool-heavy coding.'
-    }
-
     'qwen36-27b' = @{
         Name       = 'Qwen3.6 27B (dense/hybrid, recommended for tools)'
         HFRepo     = 'unsloth/Qwen3.6-27B-GGUF'
@@ -66,7 +53,20 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '14.4 GB'
         Family     = 'qwen36'
-        Notes      = 'Dense coding profile with stronger structured outputs. Uses q8_0 KV for tool-call reliability; measured 23.0 GiB @ 200K (~1 GiB free).'
+        Notes      = 'Dense coding profile with stronger structured outputs. This is the safest Qwen3.6 choice for agentic tool use after the llama.cpp reasoning/tool-call fixes; uses q8_0 KV for tool-call reliability and measures ~23.0 GiB @ 200K (~1 GiB free).'
+    }
+
+    'qwen36-35b-a3b' = @{ 
+        Name       = 'Qwen3.6 35B-A3B (MoE, fast local coding)'
+        HFRepo     = 'unsloth/Qwen3.6-35B-A3B-GGUF'
+        HFFile     = 'Qwen3.6-35B-A3B-UD-Q4_K_S.gguf'
+        Quant      = 'UD-Q4_K_S'
+        Alias      = 'qwen3.6-35b-a3b'
+        Context    = 200000
+        MaxContext = 262144
+        Size       = '19.5 GB'
+        Family     = 'qwen36'
+        Notes      = 'Fast MoE profile. Measured 23.6 GiB @ 200K -- TIGHT (~0.5 GiB free). Better for general coding than hard tool reliability; use qwen36-27b first for Copilot agent sessions.'
     }
 
     'gemma4-26b-a4b' = @{
