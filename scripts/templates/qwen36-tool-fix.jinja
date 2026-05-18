@@ -83,6 +83,20 @@
     {%- endif -%}
 {%- endif -%}
 
+{%- for message in messages[::-1] -%}
+    {%- set index = (messages|length - 1) - loop.index0 -%}
+    {%- if ns.multi_step_tool and message.role == 'user' -%}
+        {%- set content = render_content(message.content, false)|trim -%}
+        {%- if not (content.startswith('<tool_response>') and content.endswith('</tool_response>')) -%}
+            {%- set ns.multi_step_tool = false -%}
+            {%- set ns.last_query_index = index -%}
+        {%- endif -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- if ns.multi_step_tool -%}
+    {{- raise_exception('No user query found in messages.') -}}
+{%- endif -%}
+
 {%- for message in messages -%}
     {%- if loop.index0 >= num_sys and message.role != 'system' and message.role != 'developer' -%}
         {%- set content = render_content(message.content, true)|trim -%}
@@ -99,7 +113,7 @@
                 {%- endif -%}
             {%- endif -%}
             {%- set reasoning_content = reasoning_content|trim -%}
-            {%- if (preserve_thinking is defined and preserve_thinking is true) or (loop.index0 > ns.last_query_index) -%}
+            {%- if loop.index0 > ns.last_query_index and not (enable_thinking is defined and enable_thinking is false) and reasoning_content -%}
                 {{- '<|im_start|>assistant\n<think>\n' + reasoning_content + '\n</think>\n\n' + content -}}
             {%- else -%}
                 {{- '<|im_start|>assistant\n' + content -}}
@@ -151,9 +165,7 @@
 
 {%- if add_generation_prompt -%}
     {{- '<|im_start|>assistant\n' -}}
-    {%- if enable_thinking is defined and enable_thinking is false -%}
-        {{- '<think>\n</think>\n\n' -}}
-    {%- else -%}
+    {%- if not (enable_thinking is defined and enable_thinking is false) -%}
         {{- '<think>\n' -}}
     {%- endif -%}
 {%- endif -%}

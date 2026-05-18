@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
     Reports whether llama-server (started via start-server.ps1) is running,
-    which model it is serving, and whether its HTTP endpoint responds.
+    which model it is serving, its load/runtime details, and whether its HTTP
+    endpoint responds.
 #>
 
 [CmdletBinding()]
@@ -11,11 +12,70 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $logDir   = Join-Path $repoRoot 'logs'
+$logFile  = Join-Path $logDir   'llama-server.log'
 $pidFile  = Join-Path $logDir   'llama-server.pid'
 $infoFile = Join-Path $logDir   'llama-server.info.json'
 
+. (Join-Path $PSScriptRoot 'server-status.ps1')
+
+function Test-LlamaInfoProperty {
+    param(
+        [pscustomobject]$Info,
+        [string]$Name
+    )
+
+    if (-not $Info -or -not ($Info.PSObject.Properties.Name -contains $Name)) { return $false }
+    $value = $Info.PSObject.Properties[$Name].Value
+    if ($null -eq $value) { return $false }
+    if ($value -is [string] -and $value -eq '') { return $false }
+    return $true
+}
+
+function Write-LlamaModelInfo {
+    param([pscustomobject]$Info)
+
+    if (-not $Info) { return }
+
+    Write-Host ""
+    Write-Host "Model:" -ForegroundColor Cyan
+    if (Test-LlamaInfoProperty $Info 'ModelName') { Write-Host ("  Name        : {0}" -f $Info.ModelName) }
+    Write-Host ("  Model key   : {0}" -f $Info.Model)
+    Write-Host ("  Alias       : {0}" -f $Info.Alias)
+    if (Test-LlamaInfoProperty $Info 'Family') { Write-Host ("  Family      : {0}" -f $Info.Family) }
+    Write-Host ("  HF repo     : {0}" -f $Info.HFRepo)
+    if (Test-LlamaInfoProperty $Info 'HFFile') {
+        $fileLine = "  HF file     : $($Info.HFFile)"
+        if (Test-LlamaInfoProperty $Info 'Quant') { $fileLine += "  ($($Info.Quant))" }
+        if (Test-LlamaInfoProperty $Info 'Size') { $fileLine += "  weights $($Info.Size)" }
+        Write-Host $fileLine
+    } elseif (Test-LlamaInfoProperty $Info 'Quant') {
+        Write-Host ("  Quant       : {0}" -f $Info.Quant)
+    }
+    if (Test-LlamaInfoProperty $Info 'BaseUrl') { Write-Host ("  Endpoint    : {0}" -f $Info.BaseUrl) }
+    if (Test-LlamaInfoProperty $Info 'NoThink') { Write-Host ("  NoThink     : {0}" -f $Info.NoThink) }
+    if (Test-LlamaInfoProperty $Info 'Reasoning') { Write-Host ("  Reasoning   : {0}" -f $Info.Reasoning) }
+    if (Test-LlamaInfoProperty $Info 'CacheTypeK') { Write-Host ("  KV cache    : K {0}, V {1}" -f $Info.CacheTypeK, $Info.CacheTypeV) }
+    if (Test-LlamaInfoProperty $Info 'Batch') { Write-Host ("  Batch       : n_batch {0}, n_ubatch {1}" -f $Info.Batch, $Info.UBatch) }
+    if (Test-LlamaInfoProperty $Info 'NoMmproj' -and $Info.NoMmproj) { Write-Host "  Vision      : mmproj disabled" }
+    if (Test-LlamaInfoProperty $Info 'Speculative') { Write-Host ("  Speculative : {0}" -f $Info.Speculative) }
+    if (Test-LlamaInfoProperty $Info 'TemplateKwargs') { Write-Host ("  Template    : {0}" -f $Info.TemplateKwargs) }
+    if (Test-LlamaInfoProperty $Info 'Temp') {
+        Write-Host ("  Sampler     : temp {0}, top_p {1}, top_k {2}, min_p {3}, repeat {4}, presence {5}" -f $Info.Temp, $Info.TopP, $Info.TopK, $Info.MinP, $Info.RepeatPenalty, $Info.PresencePenalty)
+    }
+    if (Test-LlamaInfoProperty $Info 'Parallel') { Write-Host ("  Parallel    : {0}" -f $Info.Parallel) }
+}
+
+$info = $null
+if (Test-Path $infoFile) {
+    $info = Get-Content $infoFile -Raw | ConvertFrom-Json
+}
+
+$snapshot = Get-LlamaServerLogSnapshot -LogFile $logFile -ErrorLogFile "$logFile.err"
+
 if (-not (Test-Path $pidFile)) {
     Write-Host "llama-server: NOT RUNNING (no PID file)." -ForegroundColor Yellow
+    Write-LlamaModelInfo -Info $info
+    Write-LlamaServerLogStatus -Snapshot $snapshot -Info $info
     return
 }
 
@@ -25,12 +85,9 @@ $proc = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
 if (-not $proc) {
     Write-Host "llama-server: NOT RUNNING (stale PID $serverPid)." -ForegroundColor Yellow
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+    Write-LlamaModelInfo -Info $info
+    Write-LlamaServerLogStatus -Snapshot $snapshot -Info $info
     return
-}
-
-$info = $null
-if (Test-Path $infoFile) {
-    $info = Get-Content $infoFile -Raw | ConvertFrom-Json
 }
 
 Write-Host "llama-server: RUNNING" -ForegroundColor Green
@@ -39,25 +96,13 @@ Write-Host ("  Started     : {0:yyyy-MM-dd HH:mm:ss}" -f $proc.StartTime)
 $mem = [math]::Round($proc.WorkingSet64 / 1GB, 2)
 Write-Host ("  RAM (RSS)   : {0} GB" -f $mem)
 
-if ($info) {
-    Write-Host ("  Model key   : {0}" -f $info.Model)
-    Write-Host ("  Alias       : {0}" -f $info.Alias)
-    Write-Host ("  HF repo     : {0}" -f $info.HFRepo)
-    if ($info.HFFile) {
-        Write-Host ("  HF file     : {0}  ({1})" -f $info.HFFile, $info.Quant)
-    } else {
-        Write-Host ("  Quant       : {0}" -f $info.Quant)
-    }
-    Write-Host ("  Context     : {0}" -f $info.Context)
-    Write-Host ("  Endpoint    : {0}" -f $info.BaseUrl)
-    Write-Host ("  NoThink     : {0}" -f $info.NoThink)
-    if ($info.TemplateKwargs) {
-        Write-Host ("  Template    : {0}" -f $info.TemplateKwargs)
-    }
-}
+Write-LlamaModelInfo -Info $info
+Write-LlamaServerLogStatus -Snapshot $snapshot -Info $info
 
 # -- Probe HTTP endpoint ------------------------------------------------------
 if ($info) {
+    Write-Host ""
+    Write-Host "HTTP:" -ForegroundColor Cyan
     $health = "http://$($info.Host):$($info.Port)/health"
     $models = "http://$($info.Host):$($info.Port)/v1/models"
     try {
@@ -82,6 +127,14 @@ if ($info) {
 $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
 if ($smi) {
     Write-Host ""
-    Write-Host "GPU memory:" -ForegroundColor Cyan
-    & nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader
+    Write-Host "nvidia-smi:" -ForegroundColor Cyan
+    & nvidia-smi --query-gpu=name,memory.used,memory.total,utilization.gpu --format=csv,noheader
+    if ($proc) {
+        $gpuApps = & nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>$null
+        $serverGpuApps = @($gpuApps | Where-Object { $_ -match "^\s*$($proc.Id)\s*," })
+        if ($serverGpuApps.Count -gt 0) {
+            Write-Host "  llama-server GPU process:" -ForegroundColor DarkGray
+            $serverGpuApps | ForEach-Object { Write-Host ("  {0}" -f $_) }
+        }
+    }
 }

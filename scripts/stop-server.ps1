@@ -30,6 +30,7 @@ if (-not (Test-Path $pidFile)) {
     foreach ($p in $procs) {
         Write-Host "Stopping llama-server PID $($p.Id)..." -ForegroundColor Cyan
         Stop-Process -Id $p.Id -Force
+        $p.WaitForExit(5000) | Out-Null
     }
     Remove-StateFiles
     return
@@ -52,6 +53,7 @@ if ($proc.ProcessName -ne 'llama-server') {
         foreach ($p in $procs) {
             Write-Host "Stopping llama-server PID $($p.Id)..." -ForegroundColor Cyan
             Stop-Process -Id $p.Id -Force
+            $p.WaitForExit(5000) | Out-Null
         }
         Write-Host "Stopped." -ForegroundColor Green
     }
@@ -63,5 +65,6 @@ if ($proc.ProcessName -ne 'llama-server') {
 
 Write-Host "Stopping llama-server PID $serverPid..." -ForegroundColor Cyan
 Stop-Process -Id $serverPid -Force
+$proc.WaitForExit(5000) | Out-Null
 Remove-StateFiles
 Write-Host "Stopped." -ForegroundColor Green

@@ -37,7 +37,7 @@ param(
     [string]$RepoPath,
     [string]$ServerUrl = 'http://127.0.0.1:8080',
     [int]$RequestTimeout = 600000,
-    [int]$DefaultMaxTokens = 150000,
+    [int]$DefaultMaxTokens = 64000,
     [int]$DefaultMaxOutputTokens = 4096,
     [bool]$ParallelToolCalling = $false,
     [switch]$Force

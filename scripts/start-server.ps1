@@ -24,8 +24,14 @@
     TCP port to bind. Default 8080.
 
 .PARAMETER NoThink
-    Disable reasoning/thinking output (passes
-    --chat-template-kwargs "{\"enable_thinking\":false}").
+    Disable reasoning/thinking output. For Qwen3.6, this forces
+    `--reasoning off` and passes `enable_thinking:false` into the chat
+    template.
+
+.PARAMETER EnableReasoning
+    Re-enable Qwen3.6 reasoning traces. This is disabled by default for
+    Copilot-style clients because they do not reliably round-trip
+    `reasoning_content` across tool calls.
 
 .PARAMETER ContextOverride
     Override the catalog's --ctx-size for this launch.
@@ -35,7 +41,12 @@
     # interactive menu
 
 .EXAMPLE
-    .\scripts\start-server.ps1 -Model qwen36-35b-a3b -NoThink
+    .\scripts\start-server.ps1 -Model qwen36-27b
+    # Copilot-safe default: reasoning off
+
+.EXAMPLE
+    .\scripts\start-server.ps1 -Model qwen36-27b -EnableReasoning
+    # opt back into Qwen reasoning if your client preserves reasoning traces
 #>
 
 [CmdletBinding()]
@@ -44,6 +55,7 @@ param(
     [int]$Port = 8080,
     [string]$ListenHost = '127.0.0.1',
     [switch]$NoThink,
+    [switch]$EnableReasoning,
     [int]$ContextOverride
 )
 
@@ -56,6 +68,51 @@ $pidFile  = Join-Path $logDir   'llama-server.pid'
 $infoFile = Join-Path $logDir   'llama-server.info.json'
 $modelsDir = Join-Path $repoRoot 'models'
 $qwenTemplateFile = Join-Path $PSScriptRoot 'templates\qwen36-tool-fix.jinja'
+$statusScript = Join-Path $PSScriptRoot 'status-server.ps1'
+
+. (Join-Path $PSScriptRoot 'server-status.ps1')
+
+function Wait-LlamaServerStartupStatus {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$LogFile,
+        [string]$ErrorLogFile,
+        [int]$TimeoutSec = 60,
+        [int]$PollSec = 3
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $lastBrief = $null
+
+    Write-Host ""
+    Write-Host ("Waiting for llama-server to load (up to {0} seconds)..." -f $TimeoutSec) -ForegroundColor Cyan
+
+    while ($true) {
+        $snapshot = Get-LlamaServerLogSnapshot -LogFile $LogFile -ErrorLogFile $ErrorLogFile
+        $brief = Format-LlamaServerBriefStatus -Snapshot $snapshot
+
+        if ($brief -and $brief -ne $lastBrief) {
+            Write-Host ("  [{0:HH:mm:ss}] {1}" -f (Get-Date), $brief)
+            $lastBrief = $brief
+        }
+
+        if ($snapshot.LoadState -eq 'ready') { return 'ready' }
+        if ($snapshot.LoadState -eq 'failed') { return 'failed' }
+
+        $Process.Refresh()
+        if ($Process.HasExited) { return 'exited' }
+
+        $remaining = ($deadline - (Get-Date)).TotalSeconds
+        if ($remaining -le 0) { return 'timeout' }
+
+        $sleepSeconds = [math]::Min($PollSec, [math]::Max(1, [int][math]::Ceiling($remaining)))
+        Start-Sleep -Seconds $sleepSeconds
+    }
+}
+
+if ($NoThink -and $EnableReasoning) {
+    throw 'Choose either -NoThink or -EnableReasoning, not both.'
+}
 
 New-Item -ItemType Directory -Force -Path $logDir, $modelsDir | Out-Null
 
@@ -66,6 +123,8 @@ if (Test-Path $pidFile) {
         Write-Host "llama-server is already running (PID $existingPid)." -ForegroundColor Yellow
         Write-Host "  scripts\status-server.ps1   # check status" -ForegroundColor Yellow
         Write-Host "  scripts\stop-server.ps1     # stop it" -ForegroundColor Yellow
+        Write-Host ""
+        & $statusScript
         return
     }
     Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
@@ -125,6 +184,23 @@ $topK = if ($profile.ContainsKey('TopK')) { $profile.TopK } else { $family.TopK 
 $minP = if ($profile.ContainsKey('MinP')) { $profile.MinP } else { $family.MinP }
 $presencePenalty = if ($profile.ContainsKey('PresencePenalty')) { $profile.PresencePenalty } else { $family.PresencePenalty }
 $repeatPenalty = if ($profile.ContainsKey('RepeatPenalty')) { $profile.RepeatPenalty } else { $family.RepeatPenalty }
+$cacheTypeK = if ($profile.ContainsKey('CacheTypeK')) { $profile.CacheTypeK } else { 'q8_0' }
+$cacheTypeV = if ($profile.ContainsKey('CacheTypeV')) { $profile.CacheTypeV } else { 'q8_0' }
+$speculative = if ($profile.ContainsKey('Speculative')) { $profile.Speculative } else { $null }
+$noMmproj = $profile.ContainsKey('NoMmproj') -and [bool]$profile.NoMmproj
+$batch = if ($profile.ContainsKey('Batch')) { $profile.Batch } else { $null }
+$ubatch = if ($profile.ContainsKey('UBatch')) { $profile.UBatch } else { $null }
+
+$reasoningMode = 'auto'
+if ($profile.Family -eq 'qwen36') {
+    if ($EnableReasoning) {
+        $reasoningMode = 'on'
+    } else {
+        $reasoningMode = 'off'
+    }
+} elseif ($NoThink) {
+    $reasoningMode = 'off'
+}
 
 # -- Build llama-server arg vector --------------------------------------------
 $env:LLAMA_CACHE = $modelsDir
@@ -138,8 +214,8 @@ $llamaArgs = @(
     '--ctx-size',        $ctx
     '--n-gpu-layers',    '99'
     '--flash-attn',      'on'
-    '--cache-type-k',    'q8_0'
-    '--cache-type-v',    'q8_0'
+    '--cache-type-k',    $cacheTypeK
+    '--cache-type-v',    $cacheTypeV
     '--jinja'
     '--temp',            $temp
     '--top-p',           $topP
@@ -149,7 +225,20 @@ $llamaArgs = @(
     '--repeat-penalty',  $repeatPenalty
     '--parallel',        '1'
     '--metrics'
+    '--verbose'
 )
+
+if ($batch) {
+    $llamaArgs += @('--batch-size', $batch)
+}
+
+if ($ubatch) {
+    $llamaArgs += @('--ubatch-size', $ubatch)
+}
+
+if ($noMmproj) {
+    $llamaArgs += @('--no-mmproj')
+}
 
 if ($profile.ExtraArgs) {
     $llamaArgs += $profile.ExtraArgs
@@ -162,16 +251,21 @@ if ($profile.Family -eq 'qwen36') {
     $llamaArgs += @('--chat-template-file', $qwenTemplateFile)
 }
 
-# Qwen3.6 is prone to emitting tool calls before closing its thinking block.
-# Keep prior thinking in context and use llama.cpp's more forgiving coder parser.
+# Qwen3.6 works best with the patched template. Keep reasoning off by default
+# for Copilot-style clients, which do not resend reasoning_content across tool turns.
 $templateKwargs = [ordered]@{}
 if ($profile.Family -eq 'qwen36') {
-    $templateKwargs['preserve_thinking'] = $true
     $templateKwargs['tool_parser'] = 'qwen3_coder'
-    $llamaArgs += @('--reasoning-format', 'deepseek')
+    if ($reasoningMode -eq 'on') {
+        $llamaArgs += @('--reasoning', 'on', '--reasoning-format', 'deepseek')
+    } else {
+        $llamaArgs += @('--reasoning', 'off')
+        $templateKwargs['enable_thinking'] = $false
+    }
 }
 
-if ($NoThink) {
+if ($NoThink -and $profile.Family -ne 'qwen36') {
+    $llamaArgs += @('--reasoning', 'off')
     $templateKwargs['enable_thinking'] = $false
 }
 
@@ -190,6 +284,17 @@ Write-Host "  HF repo     : $($profile.HFRepo)"
 Write-Host "  HF file     : $($profile.HFFile)  ($($profile.Quant), $($profile.Size))"
 Write-Host "  Alias       : $($profile.Alias)"
 Write-Host "  Context     : $ctx (native max $($profile.MaxContext))"
+Write-Host "  KV cache    : K $cacheTypeK, V $cacheTypeV"
+if ($batch -or $ubatch) {
+    Write-Host "  Batch       : n_batch $batch, n_ubatch $ubatch"
+}
+if ($noMmproj) {
+    Write-Host "  Vision      : mmproj disabled"
+}
+if ($speculative) {
+    Write-Host "  Speculative : $speculative"
+}
+Write-Host "  Reasoning   : $reasoningMode"
 if ($kwargsJson) {
     Write-Host "  Template    : $kwargsJson"
 }
@@ -216,17 +321,38 @@ $proc.Id | Out-File -FilePath $pidFile -Encoding ascii -NoNewline
 $info = [ordered]@{
     Pid       = $proc.Id
     Model     = $Model
+    ModelName = $profile.Name
     Alias     = $profile.Alias
+    Family    = $profile.Family
     HFRepo    = $profile.HFRepo
     HFFile    = $profile.HFFile
     Quant     = $profile.Quant
+    Size      = $profile.Size
     Context   = $ctx
+    MaxContext = $profile.MaxContext
     Host      = $ListenHost
     Port      = $Port
     BaseUrl   = "http://$ListenHost`:$Port/v1"
     StartedAt = (Get-Date).ToString('o')
     NoThink   = [bool]$NoThink
+    Reasoning = $reasoningMode
     TemplateKwargs = $kwargsJson
+    GpuLayers = 99
+    FlashAttention = 'on'
+    CacheTypeK = $cacheTypeK
+    CacheTypeV = $cacheTypeV
+    Speculative = $speculative
+    VerboseLogging = $true
+    NoMmproj = $noMmproj
+    Batch = $batch
+    UBatch = $ubatch
+    Parallel = 1
+    Temp = $temp
+    TopP = $topP
+    TopK = $topK
+    MinP = $minP
+    PresencePenalty = $presencePenalty
+    RepeatPenalty = $repeatPenalty
 }
 $info | ConvertTo-Json | Set-Content -Path $infoFile -Encoding ascii
 
@@ -247,3 +373,20 @@ Write-Host ""
 Write-Host "Tail log : Get-Content -Wait '$logFile'"
 Write-Host "Status   : scripts\status-server.ps1"
 Write-Host "Stop     : scripts\stop-server.ps1"
+
+$startupResult = Wait-LlamaServerStartupStatus -Process $proc -LogFile $logFile -ErrorLogFile "$logFile.err" -TimeoutSec 60
+
+Write-Host ""
+if ($startupResult -eq 'ready') {
+    Write-Host "Startup wait finished: server is ready." -ForegroundColor Green
+} elseif ($startupResult -eq 'failed') {
+    Write-Host "Startup wait finished: llama-server reported a load failure." -ForegroundColor Red
+} elseif ($startupResult -eq 'exited') {
+    Write-Host "Startup wait finished: llama-server exited before it became ready." -ForegroundColor Red
+} else {
+    Write-Host "Startup wait finished: 60 seconds elapsed; server may still be loading." -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "Full status:" -ForegroundColor Cyan
+& $statusScript

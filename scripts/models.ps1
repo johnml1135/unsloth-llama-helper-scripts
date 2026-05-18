@@ -38,6 +38,11 @@
 #   Family     : 'qwen36' | 'gemma4' (controls samplers)
 #   Temp/TopP/TopK/MinP/PresencePenalty/RepeatPenalty
 #              : optional per-profile sampler overrides
+#   CacheTypeK/CacheTypeV
+#              : KV cache quantization for this profile; default q8_0
+#   NoMmproj   : pass --no-mmproj to avoid auto-loading unused vision projector
+#   Batch/UBatch
+#              : optional logical/physical batch sizes to reduce compute buffer
 #   ExtraArgs  : array of llama-server args appended verbatim
 #   Notes      : free-form caveats shown in the menu
 
@@ -53,7 +58,121 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '14.4 GB'
         Family     = 'qwen36'
+        CacheTypeK = 'q8_0'
+        CacheTypeV = 'q8_0'
+        NoMmproj   = $true
         Notes      = 'Dense coding profile with stronger structured outputs. This is the safest Qwen3.6 choice for agentic tool use after the llama.cpp reasoning/tool-call fixes; uses q8_0 KV for tool-call reliability and measures ~23.0 GiB @ 200K (~1 GiB free).'
+    }
+
+    'qwen36-27b-quality-max' = @{
+        Name       = 'Qwen3.6 27B (Dynamic Q4 quality, max native context)'
+        HFRepo     = 'unsloth/Qwen3.6-27B-GGUF'
+        HFFile     = 'Qwen3.6-27B-UD-Q4_K_XL.gguf'
+        Quant      = 'UD-Q4_K_XL'
+        Alias      = 'qwen3.6-27b-quality-max'
+        Context    = 262144
+        MaxContext = 262144
+        Size       = '16.4 GB'
+        Family     = 'qwen36'
+        CacheTypeK = 'q4_1'
+        CacheTypeV = 'q4_1'
+        NoMmproj   = $true
+        Notes      = 'Higher-quality Unsloth Dynamic 4-bit build for non-MTP sessions. Verified 65/65 GPU layers at 262K with q4_1 KV, using 22,210 MiB of 23,154 MiB initially free; prefer qwen36-27b when q8_0 KV reliability matters more than quant quality.'
+    }
+
+    'qwen36-27b-q5' = @{
+        Name       = 'Qwen3.6 27B (Q5 quality, 200K context)'
+        HFRepo     = 'unsloth/Qwen3.6-27B-GGUF'
+        HFFile     = 'Qwen3.6-27B-Q5_K_S.gguf'
+        Quant      = 'Q5_K_S'
+        Alias      = 'qwen3.6-27b-q5'
+        Context    = 200000
+        MaxContext = 262144
+        Size       = '17.7 GB'
+        Family     = 'qwen36'
+        CacheTypeK = 'q4_1'
+        CacheTypeV = 'q4_1'
+        NoMmproj   = $true
+        Notes      = 'Highest-weight non-MTP 27B profile kept in the curated 24 GB set. Verified 65/65 GPU layers at 200K with q4_1 KV, using 21,950 MiB and leaving 1,203 MiB; use this for quality-sensitive runs when less context is acceptable.'
+    }
+
+    'qwen36-27b-max' = @{
+        Name       = 'Qwen3.6 27B (max native context, KV q4_1)'
+        HFRepo     = 'unsloth/Qwen3.6-27B-GGUF'
+        HFFile     = 'Qwen3.6-27B-IQ4_XS.gguf'
+        Quant      = 'IQ4_XS'
+        Alias      = 'qwen3.6-27b-max'
+        Context    = 262144
+        MaxContext = 262144
+        Size       = '14.4 GB'
+        Family     = 'qwen36'
+        CacheTypeK = 'q4_1'
+        CacheTypeV = 'q4_1'
+        NoMmproj   = $true
+        Notes      = 'Native 256K context profile for the 24 GB card. Uses q4_1 KV because q8_0 KV spills/fails above ~200K on this RTX 3090; prefer qwen36-27b for strict tool-call reliability.'
+    }
+
+    'qwen36-27b-mtp' = @{
+        Name        = 'Qwen3.6 27B MTP (fast, q8_0 KV)'
+        HFRepo      = 'unsloth/Qwen3.6-27B-MTP-GGUF'
+        HFFile      = 'Qwen3.6-27B-IQ4_XS.gguf'
+        Quant       = 'IQ4_XS + MTP'
+        Alias       = 'qwen3.6-27b-mtp'
+        Context     = 200000
+        MaxContext  = 262144
+        Size        = '14.6 GB'
+        Family      = 'qwen36'
+        CacheTypeK  = 'q8_0'
+        CacheTypeV  = 'q8_0'
+        NoMmproj    = $true
+        Speculative = 'draft-mtp, draft_n_max=2'
+        ExtraArgs   = @(
+            '--spec-type', 'draft-mtp',
+            '--spec-draft-n-max', '2'
+        )
+        Notes       = 'MTP speculative decoding profile from Unsloth. Keeps q8_0 KV and a conservative draft limit for agent sessions; increase draft_n_max only after local throughput testing.'
+    }
+
+    'qwen36-27b-mtp-quality' = @{
+        Name        = 'Qwen3.6 27B MTP (Dynamic Q4 quality, 200K context)'
+        HFRepo      = 'unsloth/Qwen3.6-27B-MTP-GGUF'
+        HFFile      = 'Qwen3.6-27B-UD-Q4_K_XL.gguf'
+        Quant       = 'UD-Q4_K_XL + MTP'
+        Alias       = 'qwen3.6-27b-mtp-quality'
+        Context     = 200000
+        MaxContext  = 262144
+        Size        = '16.7 GB'
+        Family      = 'qwen36'
+        CacheTypeK  = 'q4_1'
+        CacheTypeV  = 'q4_1'
+        NoMmproj    = $true
+        Speculative = 'draft-mtp, draft_n_max=2'
+        ExtraArgs   = @(
+            '--spec-type', 'draft-mtp',
+            '--spec-draft-n-max', '2'
+        )
+        Notes       = 'Higher-quality MTP profile using Unsloth Dynamic 4-bit weights. Verified 66/66 GPU layers at 200K with q4_1 KV, using 21,400 MiB and leaving 1,453 MiB; native-max context is intentionally left to the lighter IQ4_XS MTP profile.'
+    }
+
+    'qwen36-27b-mtp-max' = @{
+        Name        = 'Qwen3.6 27B MTP (max native context, KV q4_1)'
+        HFRepo      = 'unsloth/Qwen3.6-27B-MTP-GGUF'
+        HFFile      = 'Qwen3.6-27B-IQ4_XS.gguf'
+        Quant       = 'IQ4_XS + MTP'
+        Alias       = 'qwen3.6-27b-mtp-max'
+        Context     = 262144
+        MaxContext  = 262144
+        Size        = '14.6 GB'
+        Family      = 'qwen36'
+        CacheTypeK  = 'q4_1'
+        CacheTypeV  = 'q4_1'
+        NoMmproj    = $true
+        Speculative = 'draft-mtp, draft_n_max=2'
+        ExtraArgs   = @(
+            '--spec-type', 'draft-mtp',
+            '--spec-draft-n-max', '2'
+        )
+        Notes       = 'Fast native-256K profile. Uses q4_1 KV to avoid spilling model layers/state off the GPU on a 24 GB card; quality/reliability may be below the q8_0 200K profiles.'
     }
 
     'qwen36-35b-a3b' = @{ 
@@ -66,6 +185,8 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '19.5 GB'
         Family     = 'qwen36'
+        CacheTypeK = 'q8_0'
+        CacheTypeV = 'q8_0'
         Notes      = 'Fast MoE profile. Measured 23.6 GiB @ 200K -- TIGHT (~0.5 GiB free). Better for general coding than hard tool reliability; use qwen36-27b first for Copilot agent sessions.'
     }
 
@@ -79,6 +200,8 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '17.5 GB'
         Family     = 'gemma4'
+        CacheTypeK = 'q8_0'
+        CacheTypeV = 'q8_0'
         ExtraArgs  = @()
         Notes      = 'MoE w/ sliding-window. Measured 22.4 GiB @ 200K (~1.6 GiB free). mmproj vision sidecar not loaded.'
     }
@@ -93,6 +216,8 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '15.3 GB'
         Family     = 'gemma4'
+        CacheTypeK = 'q8_0'
+        CacheTypeV = 'q8_0'
         ExtraArgs  = @()
         Notes      = 'Dense 60-layer with 1-in-6 full-attn (10 full + 50 sliding-1024). Measured 23.0 GiB @ 128K (no headroom for 200K).'
     }
@@ -107,13 +232,15 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext      = 262144
         Size            = '14.4 GB'
         Family          = 'qwen36'
+        CacheTypeK      = 'q8_0'
+        CacheTypeV      = 'q8_0'
         Temp            = '1.0'
         PresencePenalty = '1.5'
         ExtraArgs       = @(
             '--spec-type', 'ngram-mod',
-            '--spec-ngram-size-n', '24',
-            '--draft-min', '12',
-            '--draft-max', '48'
+            '--spec-ngram-mod-n-match', '24',
+            '--spec-ngram-mod-n-min', '12',
+            '--spec-ngram-mod-n-max', '48'
         )
         Notes           = 'Experimental speed preset adapted from the Reddit ngram-mod setup. Uses 128K ctx on the 24 GB IQ4_XS build. Best for repetitive rewrite/summarize loops; can regress or destabilize tool use.'
     }
@@ -128,11 +255,13 @@ $global:LlamaModelCatalog = [ordered]@{
         MaxContext = 262144
         Size       = '14.4 GB'
         Family     = 'qwen36'
+        CacheTypeK = 'q8_0'
+        CacheTypeV = 'q8_0'
         ExtraArgs  = @(
             '--spec-type', 'ngram-mod',
-            '--spec-ngram-size-n', '24',
-            '--draft-min', '12',
-            '--draft-max', '48'
+            '--spec-ngram-mod-n-match', '24',
+            '--spec-ngram-mod-n-min', '12',
+            '--spec-ngram-mod-n-max', '48'
         )
         Notes      = 'Experimental coding-speed preset using the corrected Reddit flags at 128K ctx. Keeps the standard Qwen coding sampler, but ngram-mod can still leak prior phrasing or break tool-heavy sessions.'
     }
